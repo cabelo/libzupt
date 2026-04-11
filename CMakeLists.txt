@@ -30,8 +30,8 @@ set(LIBZUPT_C_SOURCES
     ${LIBZUPT_SOURCE_DIR}/src/zupt_aes256.c
 )
 
-set(LIBZUPT_CXX_SOURCES
-    ${LIBZUPT_SOURCE_DIR}/src/zupt_crypto.cpp
+file(GLOB LIBZUPT_CXX_SOURCES
+    ${LIBZUPT_SOURCE_DIR}/src/*.cpp
 )
 
 # ========================
