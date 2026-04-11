@@ -132,10 +132,6 @@ install(FILES
 option(LIBZUPT_BUILD_TESTS "Build unit tests" ON)
 option(LIBZUPT_BUILD_EXAMPLES "Build examples" ON)
 
-if(WIN32)
-    set(LIBZUPT_BUILD_TESTS OFF CACHE BOOL "Disable tests on Windows" FORCE)
-endif()
-
 if(LIBZUPT_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
