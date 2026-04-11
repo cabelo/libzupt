@@ -3,6 +3,14 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)]() [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#build)
 
 **libzupt** is a library that provides encryption and decryption of files and binary data in memory using post-quantum hybrid cryptography **ML-KEM-768 + X25519** in various languages.
+
+The **libzupt** is an SDK designed to simplify the implementation of encryption and decryption for files and in-memory binary data, using a modern approach based on hybrid post-quantum cryptography **ML-KEM-768 + X25519**. Initially developed in **C++ and Python**, the library is built to be efficient, portable, and easy to integrate into applications that require advanced security. There are also plans to expand support to **Java and Node.js**, further increasing its adoption across different development ecosystems.
+
+The main goal of libzupt is to enable current applications to be protected against emerging threats from quantum computing, even when running on classical computers. By combining traditional cryptographic techniques with quantum-resistant mechanisms, the library provides an additional layer of security that anticipates future scenarios where classical algorithms may be broken. This allows developers to build more resilient systems, ensuring long-term data confidentiality and integrity.
+
+The name **zupt** is a tribute to the original project created by **Cristian Cezar Moisés**, acknowledging his fundamental contribution to the conceptual and technical foundation of this solution. This inspiration reinforces the library’s commitment to innovation, security, and the evolution of ideas that drive modern applied cryptography forward.
+
+
 <div align="center">
 <img width="480" height="487" alt="image" src="https://github.com/user-attachments/assets/df6a4a01-ca23-4b34-a5bf-d38a4c31d48c" />
 </div>
