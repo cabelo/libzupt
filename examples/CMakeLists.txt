@@ -1,20 +1,21 @@
-if(WIN32)
-    set(LIBZUPT_TEST_LIB zupt_static)
-else()
-    set(LIBZUPT_TEST_LIB zupt_shared)
-endif()
+# Example programs for libzupt
 
-add_executable(zupt_test_encrypt encrypt.cpp)
-target_link_libraries(zupt_test_encrypt PRIVATE ${LIBZUPT_TEST_LIB})
+# Basic example
+add_executable(zupt_example_basic example_basic.cpp)
+target_link_libraries(zupt_example_basic zupt_shared)
+target_include_directories(zupt_example_basic PRIVATE ${LIBZUPT_INCLUDE_DIR})
 
-add_executable(zupt_test_decrypt decrypt.cpp)
-target_link_libraries(zupt_test_decrypt PRIVATE ${LIBZUPT_TEST_LIB})
+# File encryption example
+add_executable(zupt_example_file example_file.cpp)
+target_link_libraries(zupt_example_file zupt_shared)
+target_include_directories(zupt_example_file PRIVATE ${LIBZUPT_INCLUDE_DIR})
 
-add_executable(zupt_test_file_ops file_ops.cpp)
-target_link_libraries(zupt_test_file_ops PRIVATE ${LIBZUPT_TEST_LIB})
+# Binary data example
+add_executable(zupt_example_binary example_binary.cpp)
+target_link_libraries(zupt_example_binary zupt_shared)
+target_include_directories(zupt_example_binary PRIVATE ${LIBZUPT_INCLUDE_DIR})
 
-add_executable(zupt_test_keygen keygen.cpp)
-target_link_libraries(zupt_test_keygen PRIVATE ${LIBZUPT_TEST_LIB})
-
-add_executable(zupt_test_roundtrip roundtrip.cpp)
-target_link_libraries(zupt_test_roundtrip PRIVATE ${LIBZUPT_TEST_LIB})
+# Installation
+install(TARGETS zupt_example_basic zupt_example_file zupt_example_binary
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
