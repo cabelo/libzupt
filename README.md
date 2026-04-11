@@ -1,6 +1,6 @@
 # libzupt - Post-Quantum Hybrid Cryptography Library
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)]() [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#build)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)]() [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#build) [![CMake on multiple platforms](https://github.com/cabelo/libzupt/actions/workflows/cmake-multi-platform.yml/badge.svg)](https://github.com/cabelo/libzupt/actions/workflows/cmake-multi-platform.yml)
 
 **libzupt** is a library that provides encryption and decryption of files and binary data in memory using post-quantum hybrid cryptography **ML-KEM-768 + X25519** in various languages.
 
