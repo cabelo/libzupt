@@ -283,11 +283,11 @@ The library follows the security model of **Signal PQXDH** and **iMessage PQ3**:
 
 <img width="480" height="720" alt="image" src="https://github.com/user-attachments/assets/788b3357-05a4-4c9e-abcd-fdb00f083574"  align="right" width="150"/>
 
-## License
+### License
 
 MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Author
+### Author
 
 Alessandro de Oliveira Faria (A.K.A.CABELO)
 - Founder MultiCortex
@@ -301,7 +301,7 @@ Alessandro de Oliveira Faria (A.K.A.CABELO)
 
 Contact: cabelo@opensuse.org
  
-## References
+### References
 
 - [ML-KEM-768 - FIPS 203](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf)
 - [X25519 - RFC 7748](https://tools.ietf.org/html/rfc7748)
