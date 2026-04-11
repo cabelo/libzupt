@@ -76,11 +76,17 @@ jobs:
       id: pack_artifacts
       run: |
         cp LICENSE ./build/bin/
-        tar -czvf libzupt-${{ steps.tag.outputs.name }}-bin-ubuntu-${{ matrix.build }}.tar.gz --transform "s,./,llama-${{ steps.tag.outputs.name }}/," -C ./build/bin .
+        tar -czvf libzupt-${{ steps.tag.outputs.name }}-bin-${{ matrix.os }}.tar.gz --transform "s,./,libzupt-${{ steps.tag.outputs.name }}/," -C ./build/bin .
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v6
       with:
-      path: libzupt-${{ steps.tag.outputs.name }}-bin-ubuntu-${{ matrix.build }}.tar.gz
-      name: libzupt-bin-ubuntu-${{ matrix.build }}.tar.gz
+        path: libzupt-${{ steps.tag.outputs.name }}-bin-${{ matrix.os }}.tar.gz
+        name: libzupt-bin-${{ matrix.os }}.tar.gz
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: libzupt-${{ steps.tag.outputs.name }}-bin-*.tar.gz
   
