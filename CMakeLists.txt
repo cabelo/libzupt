@@ -64,6 +64,7 @@ set_target_properties(zupt_shared PROPERTIES
     SOVERSION 1
     OUTPUT_NAME zupt
     LINKER_LANGUAGE CXX
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 # Create static library (optional)

@@ -14,6 +14,14 @@
 #include <string.h>
 #include <stdio.h>
 
+#ifdef _WIN32
+#include <process.h>
+#include <io.h>
+#define getpid _getpid
+#define unlink _unlink
+#endif
+
+
 /* ═══════════════════════════════════════════════════════════════════
  * HYBRID KEY DERIVATION
  * ═══════════════════════════════════════════════════════════════════ */
