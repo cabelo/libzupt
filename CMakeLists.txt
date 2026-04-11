@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(libzupt VERSION 1.0.0 LANGUAGES C CXX)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,19 +51,12 @@ target_compile_definitions(zupt_shared PRIVATE ZUPT_EXPORTS)
 target_compile_features(zupt_shared PUBLIC cxx_std_17)
 
 if(MSVC)
-    target_compile_options(zupt_shared PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
-    target_compile_options(zupt_shared PRIVATE /wd4251)  # disable DLL interface warning
+    target_compile_options(zupt_shared PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS /wd4251)
 else()
     target_compile_options(zupt_shared PRIVATE -Wall -Wextra -O2)
 endif()
 
-set_target_properties(zupt_shared PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION 1
-    OUTPUT_NAME zupt
-)
-
-# Create static library (optional)
+# Create static library
 add_library(zupt_static STATIC
     ${LIBZUPT_C_SOURCES}
     ${LIBZUPT_CXX_SOURCES}
@@ -71,14 +65,40 @@ add_library(zupt_static STATIC
 target_include_directories(zupt_static PUBLIC
     $<BUILD_INTERFACE:${LIBZUPT_INCLUDE_DIR}>
     $<BUILD_INTERFACE:${LIBZUPT_SOURCE_DIR}/../zupt/include>
+    $<INSTALL_INTERFACE:include>
 )
 
 target_compile_definitions(zupt_static PRIVATE ZUPT_STATIC)
 target_compile_features(zupt_static PUBLIC cxx_std_17)
 
-set_target_properties(zupt_static PROPERTIES
-    OUTPUT_NAME zupt
-)
+if(MSVC)
+    target_compile_options(zupt_static PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS /wd4251)
+else()
+    target_compile_options(zupt_static PRIVATE -Wall -Wextra -O2)
+endif()
+
+# Prevent library name collision on Windows
+if(WIN32)
+    set_target_properties(zupt_shared PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION 1
+        OUTPUT_NAME zupt
+    )
+
+    set_target_properties(zupt_static PROPERTIES
+        OUTPUT_NAME zupt_static
+    )
+else()
+    set_target_properties(zupt_shared PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION 1
+        OUTPUT_NAME zupt
+    )
+
+    set_target_properties(zupt_static PROPERTIES
+        OUTPUT_NAME zupt
+    )
+endif()
 
 # Install rules
 include(GNUInstallDirs)
@@ -128,9 +148,10 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libzupt
 )
 
-# Unit tests
+# Unit tests / examples / python
 option(LIBZUPT_BUILD_TESTS "Build unit tests" ON)
 option(LIBZUPT_BUILD_EXAMPLES "Build examples" ON)
+option(LIBZUPT_BUILD_PYTHON "Build Python bindings" ON)
 
 if(LIBZUPT_BUILD_TESTS)
     enable_testing()
@@ -141,9 +162,7 @@ if(LIBZUPT_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-# Python bindings and examples
-option(LIBZUPT_BUILD_PYTHON "Build Python bindings" ON)
-
 if(LIBZUPT_BUILD_PYTHON)
     add_subdirectory(examples_python)
 endif()
+
