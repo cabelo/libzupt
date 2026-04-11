@@ -272,6 +272,9 @@ The library follows the security model of **Signal PQXDH** and **iMessage PQ3**:
 - Private keys must be stored in secure locations
 - DO NOT reuse cryptographic headers with different keys
 
+
+<img width="480" height="720" alt="image" src="https://github.com/user-attachments/assets/788b3357-05a4-4c9e-abcd-fdb00f083574"  align="right" width="150"/>
+
 ## License
 
 MIT License - see the [LICENSE](LICENSE) file for details.
@@ -287,6 +290,8 @@ Alessandro de Oliveira Faria (A.K.A.CABELO)
 - Member of the Foton Institute
 - Professor at FIA
 - Member i2Ai and ABRIA
+
+Contact: cabelo@opensuse.org
  
 ## References
 
@@ -294,3 +299,4 @@ Alessandro de Oliveira Faria (A.K.A.CABELO)
 - [X25519 - RFC 7748](https://tools.ietf.org/html/rfc7748)
 - [Signal PQXDH](https://signal.org/docs/specifications/pqx/)
 - [Libsodium](https://github.com/jedisct1/libsodium)
+
