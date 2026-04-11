@@ -1,0 +1,11 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=${prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: libzupt
+Description: Hybrid post-quantum encryption library (ML-KEM-768 + X25519)
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lzupt
+Libs.private: -lm
+Cflags: -I${includedir}

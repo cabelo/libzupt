@@ -1,0 +1,42 @@
+#!/bin/bash
+# Run all libzupt tests
+
+set -e
+
+SCRIPT_DIR="@CMAKE_CURRENT_SOURCE_DIR@"
+BUILD_DIR="@CMAKE_CURRENT_BINARY_DIR@"
+
+echo "=========================================="
+echo "  libzupt Test Suite"
+echo "=========================================="
+echo ""
+
+# Run tests
+echo "Running key generation tests..."
+echo "----------------------------------------"
+"$BUILD_DIR/zupt_test_keygen"
+echo ""
+
+echo "Running encryption tests..."
+echo "----------------------------------------"
+"$BUILD_DIR/zupt_test_encrypt"
+echo ""
+
+echo "Running decryption tests..."
+echo "----------------------------------------"
+"$BUILD_DIR/zupt_test_decrypt"
+echo ""
+
+echo "Running roundtrip tests..."
+echo "----------------------------------------"
+"$BUILD_DIR/zupt_test_roundtrip"
+echo ""
+
+echo "Running file operations tests..."
+echo "----------------------------------------"
+"$BUILD_DIR/zupt_test_file_ops"
+echo ""
+
+echo "=========================================="
+echo "  All Tests Passed!"
+echo "=========================================="
