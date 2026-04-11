@@ -75,7 +75,6 @@ jobs:
     - name: Pack artifacts
       id: pack_artifacts
       run: |
-        cp LICENSE ./build/bin/
         tar -czvf libzupt-${{ steps.tag.outputs.name }}-bin-${{ matrix.os }}.tar.gz --transform "s,./,libzupt-${{ steps.tag.outputs.name }}/," -C ./build/bin .
 
     - name: Upload artifacts
