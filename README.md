@@ -308,3 +308,5 @@ Contact: cabelo@opensuse.org
 - [Signal PQXDH](https://signal.org/docs/specifications/pqx/)
 - [Libsodium](https://github.com/jedisct1/libsodium)
 
+[<img width="225" height="134" alt="image" src="https://github.com/user-attachments/assets/95eea4cf-9ec8-4a68-9b26-1cb7ce19534c" />](https://www.paypal.com/donate/?hosted_button_id=7X8GVQG2J78LW)
+
