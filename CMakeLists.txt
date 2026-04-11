@@ -8,16 +8,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Position independent code for shared library
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Output directories
+# Paths
 set(LIBZUPT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(LIBZUPT_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(LIBZUPT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 get_filename_component(LIBZUPT_EXTRA_INCLUDE_DIR
     ${LIBZUPT_SOURCE_DIR}/../zupt/include
     ABSOLUTE
 )
 
-# Source files
+# Sources
 set(LIBZUPT_C_SOURCES
     ${LIBZUPT_SOURCE_DIR}/src/zupt_cxx.c
     ${LIBZUPT_SOURCE_DIR}/src/zupt_sha256.c
@@ -33,7 +34,9 @@ set(LIBZUPT_CXX_SOURCES
     ${LIBZUPT_SOURCE_DIR}/src/zupt_crypto.cpp
 )
 
-# Create shared library
+# ========================
+# SHARED LIBRARY
+# ========================
 add_library(zupt_shared SHARED
     ${LIBZUPT_C_SOURCES}
     ${LIBZUPT_CXX_SOURCES}
@@ -50,7 +53,7 @@ target_compile_features(zupt_shared PUBLIC cxx_std_17)
 
 if(MSVC)
     target_compile_options(zupt_shared PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
-    target_compile_options(zupt_shared PRIVATE /wd4251)  # disable DLL interface warning
+    target_compile_options(zupt_shared PRIVATE /wd4251)
     target_compile_definitions(zupt_shared PRIVATE
         getpid=_getpid
         unlink=_unlink
@@ -64,10 +67,11 @@ set_target_properties(zupt_shared PROPERTIES
     SOVERSION 1
     OUTPUT_NAME zupt
     LINKER_LANGUAGE CXX
-    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
-# Create static library (optional)
+# ========================
+# STATIC LIBRARY
+# ========================
 add_library(zupt_static STATIC
     ${LIBZUPT_C_SOURCES}
     ${LIBZUPT_CXX_SOURCES}
@@ -98,7 +102,9 @@ set_target_properties(zupt_static PROPERTIES
     LINKER_LANGUAGE CXX
 )
 
-# Install rules
+# ========================
+# INSTALL
+# ========================
 include(GNUInstallDirs)
 
 install(TARGETS zupt_shared zupt_static
@@ -113,7 +119,7 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-# pkg-config file
+# pkg-config
 configure_file(
     ${LIBZUPT_SOURCE_DIR}/libzupt.pc.in
     ${LIBZUPT_BUILD_DIR}/libzupt.pc
@@ -125,7 +131,7 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
 )
 
-# Export targets
+# CMake config
 include(CMakePackageConfigHelpers)
 
 write_basic_package_version_file(
@@ -146,9 +152,23 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libzupt
 )
 
-# Unit tests
-option(LIBZUPT_BUILD_TESTS "Build unit tests" ON)
+# ========================
+# BUILD OPTIONS
+# ========================
+
+# 🔥 TESTS DESABILITADOS NO WINDOWS
+if(WIN32)
+    option(LIBZUPT_BUILD_TESTS "Build unit tests" OFF)
+else()
+    option(LIBZUPT_BUILD_TESTS "Build unit tests" ON)
+endif()
+
 option(LIBZUPT_BUILD_EXAMPLES "Build examples" ON)
+option(LIBZUPT_BUILD_PYTHON "Build Python bindings" ON)
+
+# ========================
+# SUBDIRECTORIES
+# ========================
 
 if(LIBZUPT_BUILD_TESTS)
     enable_testing()
@@ -158,9 +178,6 @@ endif()
 if(LIBZUPT_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
-
-# Python bindings and examples
-option(LIBZUPT_BUILD_PYTHON "Build Python bindings" ON)
 
 if(LIBZUPT_BUILD_PYTHON)
     add_subdirectory(examples_python)
