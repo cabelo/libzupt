@@ -69,6 +69,8 @@ set_target_properties(zupt_shared PROPERTIES
     LINKER_LANGUAGE CXX
 )
 
+add_library(zupt ALIAS zupt_shared)
+
 # ========================
 # STATIC LIBRARY
 # ========================
