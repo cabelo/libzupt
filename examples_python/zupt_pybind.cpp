@@ -87,7 +87,9 @@ PYBIND11_MODULE(zupt, m) {
         .def("size", &zupt::SecureBuffer::size)
         .def("data_ptr", (uint8_t*(zupt::SecureBuffer::*)()) &zupt::SecureBuffer::data)
         .def("data_ptr_const", (const uint8_t*(zupt::SecureBuffer::*)() const) &zupt::SecureBuffer::data)
-        .def("to_bytes", &zupt::SecureBuffer::toVector)
+        .def("to_bytes", [](const zupt::SecureBuffer& self) {
+            return py::bytes(reinterpret_cast<const char*>(self.data()), self.size());
+        })
         .def("to_string", &zupt::SecureBuffer::toString)
         .def("zeroize", &zupt::SecureBuffer::zeroize)
         .def("__len__", &zupt::SecureBuffer::size)
@@ -188,11 +190,28 @@ PYBIND11_MODULE(zupt, m) {
         });
 
     // Helper functions
-    m.def("random_bytes", &zupt::randomBytes);
-    m.def("sha256", [](const std::vector<uint8_t>& data) {
-        return zupt::sha256(data.data(), data.size());
+    m.def("random_bytes", [](size_t size) {
+        std::vector<uint8_t> result = zupt::randomBytes(size);
+        return py::bytes(reinterpret_cast<const char*>(result.data()), result.size());
     });
-    m.def("sha3_512", &zupt::sha3_512);
+    m.def("sha256", [](py::object data) {
+        py::bytes data_bytes = data.cast<py::bytes>();
+        std::string data_str = data_bytes.cast<std::string>();
+        std::vector<uint8_t> result = zupt::sha256(
+            reinterpret_cast<const uint8_t*>(data_str.data()),
+            data_str.size()
+        );
+        return py::bytes(reinterpret_cast<const char*>(result.data()), result.size());
+    });
+    m.def("sha3_512", [](py::object data) {
+        py::bytes data_bytes = data.cast<py::bytes>();
+        std::string data_str = data_bytes.cast<std::string>();
+        std::vector<uint8_t> result = zupt::sha3_512(
+            reinterpret_cast<const uint8_t*>(data_str.data()),
+            data_str.size()
+        );
+        return py::bytes(reinterpret_cast<const char*>(result.data()), result.size());
+    });
     m.def("secure_wipe", &zupt::secureWipe);
 
     // Version info
