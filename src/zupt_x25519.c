@@ -281,7 +281,7 @@ void zupt_x25519(uint8_t out[32], const uint8_t scalar[32], const uint8_t point[
     fe_tobytes(out, x2);
 
     /* Wipe stack */
-    memset(e, 0, 32);
+    (void)memset_s(e, sizeof e, 0, sizeof e);
 }
 
 void zupt_x25519_base(uint8_t out[32], const uint8_t scalar[32]) {
