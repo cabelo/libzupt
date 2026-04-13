@@ -134,7 +134,7 @@ void test_corrupted_header() {
         decryptor.decryptMemory(ciphertext.data(), ciphertext.size(), corruptHeader);
     } catch (const zupt::ZuptError& e) {
         threw = true;
-        assert(e.code() == zupt::ErrorCode::ERR_INVALID);
+        assert(e.code() == zupt::ErrorCode::ERR_AUTH_FAIL);
     }
     assert(threw);
 
