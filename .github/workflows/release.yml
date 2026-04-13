@@ -75,7 +75,7 @@ jobs:
     - name: Pack artifacts
       id: pack_artifacts
       run: |
-        tar -czvf libzupt-${{ steps.tag.outputs.name }}-bin-${{ matrix.os }}.tar.gz --transform "s,^,libzupt-${{ steps.tag.outputs.name }}/," -C ./build libzupt.so libzupt_static.a tests/zupt_test_*
+        tar -czvf libzupt-${{ steps.tag.outputs.name }}-bin-${{ matrix.os }}.tar.gz --transform "s,^,libzupt-${{ steps.tag.outputs.name }}/," -C ./build libzupt.so libzupt_static.a 
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v6
