@@ -24,7 +24,7 @@ fi
 
 echo "Running basic example..."
 echo "----------------------------------------"
-"$BUILD_DIR/zupt_example_basic"
+"$BUILD_DIR/examples/zupt_example_basic"
 echo ""
 
 echo "=========================================="
@@ -33,7 +33,7 @@ echo "=========================================="
 echo ""
 
 # Generate keys
-"$BUILD_DIR/zupt_example_file" genkey /tmp/demo_private.key /tmp/demo_public.key
+"$BUILD_DIR/examples/zupt_example_file" genkey /tmp/demo_private.key /tmp/demo_public.key
 
 echo ""
 echo "=========================================="
@@ -54,7 +54,7 @@ echo "=========================================="
 echo "  Encrypting file..."
 echo "=========================================="
 echo ""
-"$BUILD_DIR/zupt_example_file" encrypt /tmp/demo_public.key /tmp/demo_input.txt /tmp/demo_output.zupt
+"$BUILD_DIR/examples/zupt_example_file" encrypt /tmp/demo_public.key /tmp/demo_input.txt /tmp/demo_output.zupt
 
 echo ""
 echo "Encrypted file size: $(wc -c < /tmp/demo_output.zupt) bytes"
@@ -66,7 +66,7 @@ echo "=========================================="
 echo "  Decrypting file..."
 echo "=========================================="
 echo ""
-"$BUILD_DIR/zupt_example_file" decrypt /tmp/demo_private.key /tmp/demo_output.zupt /tmp/demo_output_decrypted.txt /tmp/demo_output.zupt.header
+"$BUILD_DIR/examples/zupt_example_file" decrypt /tmp/demo_private.key /tmp/demo_output.zupt /tmp/demo_output_decrypted.txt /tmp/demo_output.zupt.header
 
 echo ""
 echo "Decrypted file content:"
