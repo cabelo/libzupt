@@ -10,7 +10,6 @@ The main goal of libzupt is to enable current applications to be protected again
 
 The name **zupt** is a tribute to the original project created by **Cristian Cezar Moisés**, acknowledging his fundamental contribution to the conceptual and technical foundation of this solution. This inspiration reinforces the library’s commitment to innovation, security, and the evolution of ideas that drive modern applied cryptography forward.
 
-
 <div align="center">
 <img width="480" height="487" alt="image" src="https://github.com/user-attachments/assets/df6a4a01-ca23-4b34-a5bf-d38a4c31d48c" />
 </div>
@@ -309,4 +308,3 @@ Contact: cabelo@opensuse.org
 - [Libsodium](https://github.com/jedisct1/libsodium)
 
 [<img width="225" height="134" alt="image" src="https://github.com/user-attachments/assets/95eea4cf-9ec8-4a68-9b26-1cb7ce19534c" />](https://www.paypal.com/donate/?hosted_button_id=7X8GVQG2J78LW)
-
