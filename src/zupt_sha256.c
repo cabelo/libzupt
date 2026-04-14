@@ -1,8 +1,10 @@
 /*
  * ZUPT - SHA-256 (FIPS 180-4)
  * Pure C implementation, no dependencies.
+ * FRAMA-C: ACSL-annotated (v2.0.0)
  */
 #include "zupt.h"
+#include "zupt_acsl.h"
 #include <string.h>
 
 static const uint32_t K[64] = {
@@ -81,6 +83,14 @@ void zupt_sha256_final(zupt_sha256_ctx *c, uint8_t h[32]) {
     for (int i=0;i<8;i++) be32_put(h+i*4, c->state[i]);
 }
 
+/* FRAMA-C: SHA-256 one-shot hash */
+/*@ requires n <= 0xFFFFFFFFFFFFFFFF / 8;
+  @ requires \valid_read(d + (0..n-1));
+  @ requires \valid(h + (0..31));
+  @ requires \separated(d + (0..n-1), h + (0..31));
+  @ assigns h[0..31];
+  @ ensures \initialized(h + (0..31));
+*/
 void zupt_sha256(const uint8_t *d, size_t n, uint8_t h[32]) {
     zupt_sha256_ctx c;
     zupt_sha256_init(&c);

@@ -18,6 +18,7 @@
 #include "zupt_mlkem.h"
 #include "zupt_keccak.h"
 #include "zupt.h" /* for zupt_random_bytes, zupt_secure_wipe */
+#include "zupt_acsl.h"
 #include "zupt_jasmin.h"
 #include <string.h>
 
@@ -478,6 +479,14 @@ static void kpke_decrypt(uint8_t m[32], const uint8_t ct[1088],
  * Fujisaki-Okamoto transform for CCA security.
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* FRAMA-C: ML-KEM-768 key generation (FIPS 203) */
+/*@ requires \valid(pk + (0..1183));
+  @ requires \valid(sk + (0..2399));
+  @ requires \separated(pk + (0..1183), sk + (0..2399));
+  @ assigns pk[0..1183], sk[0..2399];
+  @ ensures \result == 0 ==> \initialized(pk + (0..1183));
+  @ ensures \result == 0 ==> \initialized(sk + (0..2399));
+*/
 int zupt_mlkem768_keygen(uint8_t pk[1184], uint8_t sk[2400]) {
     /* d ← random 32 bytes */
     uint8_t d[32];
@@ -503,6 +512,16 @@ int zupt_mlkem768_keygen(uint8_t pk[1184], uint8_t sk[2400]) {
     return 0;
 }
 
+/* FRAMA-C: ML-KEM-768 encapsulation (FIPS 203) */
+/*@ requires \valid(ct + (0..1087));
+  @ requires \valid(ss + (0..31));
+  @ requires \valid_read(pk + (0..1183));
+  @ requires \separated(ct + (0..1087), ss + (0..31));
+  @ requires \separated(ct + (0..1087), pk + (0..1183));
+  @ assigns ct[0..1087], ss[0..31];
+  @ ensures \result == 0 ==> \initialized(ct + (0..1087));
+  @ ensures \result == 0 ==> \initialized(ss + (0..31));
+*/
 int zupt_mlkem768_encaps(uint8_t ct[1088], uint8_t ss[32],
                           const uint8_t pk[1184]) {
     /* m ← random 32 bytes */
@@ -540,6 +559,16 @@ int zupt_mlkem768_encaps(uint8_t ct[1088], uint8_t ss[32],
 /* CT-REQUIRED: Implicit rejection — if ciphertext is invalid, produce
  * pseudorandom ss from z (no distinguishable failure). Both paths execute
  * fully; final selection uses constant-time conditional move. */
+/* FRAMA-C: ML-KEM-768 decapsulation with implicit rejection (FIPS 203)
+ * CT-REQUIRED: Invalid ciphertext produces pseudorandom ss (no distinguishable failure) */
+/*@ requires \valid(ss + (0..31));
+  @ requires \valid_read(ct + (0..1087));
+  @ requires \valid_read(sk + (0..2399));
+  @ requires \separated(ss + (0..31), ct + (0..1087));
+  @ assigns ss[0..31];
+  @ ensures \result == 0;
+  @ ensures \initialized(ss + (0..31));
+*/
 int zupt_mlkem768_decaps(uint8_t ss[32], const uint8_t ct[1088],
                           const uint8_t sk[2400]) {
     /* Parse sk = sk_pke ‖ pk ‖ h ‖ z */
