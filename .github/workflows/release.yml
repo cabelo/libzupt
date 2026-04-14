@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-
+https://github.com/cabelo/libzupt/edit/main/.github/workflows/release.yml
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -68,17 +68,17 @@ jobs:
     - name: Determine tag name
       id: tag
       uses: ./.github/actions/get-tag-name
-
     - name: Pack artifacts
       id: pack_artifacts
       run: |
-        tar -czvf libzupt-${{ steps.tag.outputs.name }}-bin-${{ matrix.os }}.tar.gz --transform "s,^,libzupt-${{ steps.tag.outputs.name }}/," -C ./build libzupt.so libzupt_static.a 
+        Copy-Item "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Redist\MSVC\14.44.35112\debug_nonredist\${{ matrix.arch }}\Microsoft.VC143.OpenMP.LLVM\libomp140.${{ matrix.arch == 'x64' && 'x86_64' || 'aarch64' }}.dll" .\build\bin\Release\
+        7z a -snl libzupt-bin-win-cpu-${{ matrix.arch }}.zip .\build\bin\Release\*
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v6
       with:
-        path: libzupt-${{ steps.tag.outputs.name }}-bin-${{ matrix.os }}.tar.gz
-        name: libzupt-bin-${{ matrix.os }}.tar.gz
+        path: libzupt-bin-win-cpu-${{ matrix.arch }}.zip
+        name: libzupt-bin-win-cpu-${{ matrix.arch }}.zip
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
