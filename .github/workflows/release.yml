@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-https://github.com/cabelo/libzupt/edit/main/.github/workflows/release.yml
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
