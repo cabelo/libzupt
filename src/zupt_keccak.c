@@ -6,8 +6,11 @@
  * Keccak-f[1600] permutation with SHA3-256, SHA3-512, SHAKE-128, SHAKE-256.
  * Implements FIPS 202 (SHA-3 Standard).
  * Required by ML-KEM-768 (FIPS 203) for hashing and sampling.
+ *
+ * FRAMA-C: ACSL-annotated (v2.0.0)
  */
 #include "zupt_keccak.h"
+#include "zupt_acsl.h"
 #include <string.h>
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -47,7 +50,7 @@ static const int KECCAK_PI[25] = {
     14, 24,  9, 19,  4
 };
 
-#define ROL64(x, n) (((x) << (n)) | ((x) >> (64 - (n))))
+#define ROL64(x, n) ((n) ? (((x) << (n)) | ((x) >> (64 - (n)))) : (x))
 
 /* ═══════════════════════════════════════════════════════════════════
  * KECCAK-f[1600] PERMUTATION (24 rounds)
@@ -152,6 +155,13 @@ static void keccak_squeeze(zupt_keccak_ctx *ctx, uint8_t *out, size_t len) {
  * SHA3-256: rate=136 bytes (1088 bits), capacity=512 bits
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* FRAMA-C: SHA3-256 one-shot hash */
+/*@ requires \valid_read(data + (0..len-1));
+  @ requires \valid(out + (0..31));
+  @ requires \separated(data + (0..len-1), out + (0..31));
+  @ assigns out[0..31];
+  @ ensures \initialized(out + (0..31));
+*/
 void zupt_sha3_256(const uint8_t *data, size_t len, uint8_t out[32]) {
     zupt_keccak_ctx ctx;
     keccak_init(&ctx, 136, 0x06); /* SHA3 domain suffix */
@@ -164,6 +174,13 @@ void zupt_sha3_256(const uint8_t *data, size_t len, uint8_t out[32]) {
  * SHA3-512: rate=72 bytes (576 bits), capacity=1024 bits
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* FRAMA-C: SHA3-512 one-shot hash */
+/*@ requires \valid_read(data + (0..len-1));
+  @ requires \valid(out + (0..63));
+  @ requires \separated(data + (0..len-1), out + (0..63));
+  @ assigns out[0..63];
+  @ ensures \initialized(out + (0..63));
+*/
 void zupt_sha3_512(const uint8_t *data, size_t len, uint8_t out[64]) {
     zupt_keccak_ctx ctx;
     keccak_init(&ctx, 72, 0x06);
@@ -176,6 +193,13 @@ void zupt_sha3_512(const uint8_t *data, size_t len, uint8_t out[64]) {
  * SHAKE-128: rate=168 bytes (1344 bits)
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* FRAMA-C: SHAKE-128 extendable output function */
+/*@ requires \valid_read(data + (0..dlen-1));
+  @ requires \valid(out + (0..olen-1));
+  @ requires \separated(data + (0..dlen-1), out + (0..olen-1));
+  @ assigns out[0..olen-1];
+  @ ensures \initialized(out + (0..olen-1));
+*/
 void zupt_shake128(const uint8_t *data, size_t dlen, uint8_t *out, size_t olen) {
     zupt_keccak_ctx ctx;
     keccak_init(&ctx, 168, 0x1F); /* SHAKE domain suffix */
@@ -197,6 +221,13 @@ void zupt_shake128_squeeze(zupt_keccak_ctx *ctx, uint8_t *out, size_t len) {
  * SHAKE-256: rate=136 bytes (1088 bits)
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* FRAMA-C: SHAKE-256 extendable output function */
+/*@ requires \valid_read(data + (0..dlen-1));
+  @ requires \valid(out + (0..olen-1));
+  @ requires \separated(data + (0..dlen-1), out + (0..olen-1));
+  @ assigns out[0..olen-1];
+  @ ensures \initialized(out + (0..olen-1));
+*/
 void zupt_shake256(const uint8_t *data, size_t dlen, uint8_t *out, size_t olen) {
     zupt_keccak_ctx ctx;
     keccak_init(&ctx, 136, 0x1F);

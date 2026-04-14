@@ -1,8 +1,10 @@
 /*
  * ZUPT - AES-256 Block Cipher (FIPS 197)
  * Pure C, constant-time T-table implementation.
+ * FRAMA-C: ACSL-annotated (v2.0.0)
  */
 #include "zupt.h"
+#include "zupt_acsl.h"
 #include <string.h>
 
 /* ─── S-Box ─── */
@@ -36,6 +38,12 @@ static inline uint8_t gmul(uint8_t a, uint8_t b) {
 }
 
 /* ─── Key Expansion (AES-256: 14 rounds, 60 round-key words) ─── */
+/* FRAMA-C: AES-256 key schedule expansion */
+/*@ requires \valid(c);
+  @ requires \valid_read(key + (0..31));
+  @ assigns c->rk[0..59];
+  @ ensures \initialized(&c->rk[0..59]);
+*/
 void zupt_aes256_init(zupt_aes256_ctx *c, const uint8_t key[32]) {
     uint32_t *rk = c->rk;
     for (int i=0;i<8;i++)
@@ -56,6 +64,14 @@ void zupt_aes256_init(zupt_aes256_ctx *c, const uint8_t key[32]) {
 }
 
 /* ─── Single block encryption ─── */
+/* FRAMA-C: AES-256 single-block encrypt */
+/*@ requires \valid_read(&c->rk[0..59]);
+  @ requires \valid_read(in + (0..15));
+  @ requires \valid(out + (0..15));
+  @ requires \separated(in + (0..15), out + (0..15));
+  @ assigns out[0..15];
+  @ ensures \initialized(out + (0..15));
+*/
 void zupt_aes256_encrypt_block(const zupt_aes256_ctx *c, const uint8_t in[16], uint8_t out[16]) {
     uint8_t s[16];
     const uint32_t *rk = c->rk;

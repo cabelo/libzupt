@@ -7,6 +7,8 @@
  *
  * Calling convention: System V AMD64 ABI.
  * Pointer args passed in RDI, RSI, RDX, RCX, R8, R9.
+ *
+ * v2.0.0: All 4 Jasmin functions wired and active.
  */
 #ifndef ZUPT_JASMIN_H
 #define ZUPT_JASMIN_H
@@ -27,14 +29,34 @@ extern void zupt_ct_select_32(void *out, const void *a,
 
 /* JASMIN-VERIFIED: CT conditional swap (4×u64 masked XOR swap).
  * if cond==0: no-op. if cond==1: swaps a↔b in place.
- * Replaces fe_cswap in zupt_x25519.c. */
+ * Replaces fe_cswap in zupt_x25519.c.
+ * NOTE: Requires 4×u64 field element layout (donna64). */
 extern void zupt_fe_cswap(void *a, void *b, uint64_t cond);
 
-/* NOTE: zupt_aes256_blk has an offset bug in the Jasmin-generated
- * assembly (stack u128[15] indexing uses byte offset instead of
- * element offset — rk.[1] generates [rsp+1] not [rsp+16]).
- * AES-NI path is NOT wired in until the .jazz source is fixed.
- * C table-based AES remains the active path. */
+/* JASMIN-VERIFIED: AES-256 single-block encrypt via AES-NI.
+ * out = AES-256-ECB(key, ctr) XOR in.
+ * FIX v2.0.0: Stack offset bug resolved — round keys at correct
+ * 16-byte aligned offsets. Requires AES-NI (checked via CPUID).
+ *
+ * Args (System V ABI):
+ *   out_ptr (RDI): destination for 16-byte result
+ *   in_blk  (RSI): pointer to 16-byte plaintext block
+ *   key     (RDX): pointer to 32-byte AES-256 key (two u128)
+ *   ctr_blk (RCX): pointer to 16-byte counter block
+ */
+extern void zupt_aes256_blk(void *out, const void *in,
+                              const void *key, const void *ctr);
+
+/* JASMIN-VERIFIED: AES-256-CTR 4-block pipeline via AES-NI.
+ * Processes nblocks×16 bytes with 4-way interleaving.
+ * Counter is updated in-place (big-endian increment in bytes [8..15]).
+ * Requires AES-NI. Falls back to zupt_aes256_blk for remaining 1-3 blocks.
+ *
+ * Args: out(RDI), in(RSI), key(RDX), ctr(RCX), nblocks(R8)
+ */
+extern void zupt_aes256_ctr4(void *out, const void *in,
+                               const void *key, void *ctr,
+                               uint64_t nblocks);
 
 #endif /* ZUPT_USE_JASMIN */
 #endif /* ZUPT_JASMIN_H */

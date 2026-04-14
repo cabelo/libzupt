@@ -6,13 +6,21 @@
  * Cryptographic operations:
  * - HMAC-SHA256, PBKDF2, AES-256-CTR, Encrypt-then-MAC (v0.2+)
  * - Hybrid PQ KEM: ML-KEM-768 + X25519 (v0.7.0)
+ *
+ * FRAMA-C: ACSL-annotated (v2.0.0)
  */
 #define _GNU_SOURCE
 #include "zupt.h"
+#include "zupt_acsl.h"
 #include "zupt_jasmin.h"
+#include "zupt_cpuid.h"  /* JASMIN-VERIFIED: AES-NI dispatch */
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#if defined(__linux__)
+  #include <sys/syscall.h>
+  #include <unistd.h>
+#endif
 
 /* ═══════════════════════════════════════════════════════════════════
  * RANDOM BYTES (OS-native CSPRNG — NO FALLBACK)
@@ -35,10 +43,11 @@ void zupt_random_bytes(uint8_t *buf, size_t len) {
     exit(1);
 #else
     /* Linux/macOS/BSD: try getrandom(2) first, then /dev/urandom */
-  #if defined(__linux__) && defined(SYS_getrandom)
-    #include <sys/syscall.h>
+  #if defined(__linux__)
+    #if defined(SYS_getrandom)
     ssize_t r = syscall(SYS_getrandom, buf, len, 0);
     if (r == (ssize_t)len) return;
+    #endif
   #endif
     FILE *f = fopen("/dev/urandom", "rb");
     if (f) {
@@ -55,6 +64,16 @@ void zupt_random_bytes(uint8_t *buf, size_t len) {
  * HMAC-SHA256 (RFC 2104)
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* FRAMA-C: HMAC-SHA256 (RFC 2104) */
+/*@ requires klen <= 256;
+  @ requires \valid_read(key + (0..klen-1));
+  @ requires \valid_read(data + (0..dlen-1));
+  @ requires \valid(mac + (0..31));
+  @ requires \separated(key + (0..klen-1), mac + (0..31));
+  @ requires \separated(data + (0..dlen-1), mac + (0..31));
+  @ assigns mac[0..31];
+  @ ensures \initialized(mac + (0..31));
+*/
 void zupt_hmac_sha256(const uint8_t *key, size_t klen,
                       const uint8_t *data, size_t dlen,
                       uint8_t mac[32]) {
@@ -99,6 +118,17 @@ void zupt_hmac_sha256(const uint8_t *key, size_t klen,
  * PBKDF2-HMAC-SHA256 (RFC 8018)
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* FRAMA-C: PBKDF2-HMAC-SHA256 (RFC 8018) */
+/*@ requires pwlen <= 256;
+  @ requires slen <= 252;
+  @ requires olen > 0 && olen <= 64;
+  @ requires iterations >= 1;
+  @ requires \valid_read(pw + (0..pwlen-1));
+  @ requires \valid_read(salt + (0..slen-1));
+  @ requires \valid(output + (0..olen-1));
+  @ assigns output[0..olen-1];
+  @ ensures \initialized(output + (0..olen-1));
+*/
 void zupt_pbkdf2_sha256(const uint8_t *pw, size_t pwlen,
                         const uint8_t *salt, size_t slen,
                         uint32_t iterations,
@@ -148,13 +178,73 @@ void zupt_pbkdf2_sha256(const uint8_t *pw, size_t pwlen,
  * AES-256-CTR MODE
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* FRAMA-C: AES-256-CTR stream cipher */
+/*@ requires \valid_read(key + (0..31));
+  @ requires \valid_read(nonce + (0..15));
+  @ requires \valid_read(in + (0..len-1));
+  @ requires \valid(out + (0..len-1));
+  @ requires \separated(in + (0..len-1), out + (0..len-1));
+  @ assigns out[0..len-1];
+  @ ensures \initialized(out + (0..len-1));
+*/
 void zupt_aes256_ctr(const uint8_t key[32], const uint8_t nonce[16],
                      const uint8_t *in, uint8_t *out, size_t len) {
-    zupt_aes256_ctx ctx;
-    zupt_aes256_init(&ctx, key);
-
     uint8_t counter[16], keystream[16];
     memcpy(counter, nonce, 16);
+
+#ifdef ZUPT_USE_JASMIN
+    /* JASMIN-VERIFIED: AES-NI path — constant-time, no T-table leakage.
+     * The Jasmin-generated assembly uses VEX-encoded instructions (vaesenc,
+     * vmovdqu, vpxor, etc.) which require BOTH AES-NI AND AVX support.
+     * Checking only has_aesni would SIGILL on CPUs with AES-NI but no AVX,
+     * or where the OS hasn't enabled XSAVE for YMM state. */
+    if (zupt_cpu.has_aesni && zupt_cpu.has_avx) {
+        size_t full_blocks = len / 16;
+        size_t tail_bytes = len % 16;
+
+        if (full_blocks >= 4) {
+            /* 4-block pipeline: processes 4 blocks per iteration */
+            size_t pipe_blocks = (full_blocks / 4) * 4;
+            zupt_aes256_ctr4(out, in, key, counter, pipe_blocks);
+            size_t pipe_bytes = pipe_blocks * 16;
+            in += pipe_bytes;
+            out += pipe_bytes;
+            full_blocks -= pipe_blocks;
+        }
+
+        /* Remaining 0-3 full blocks: single-block path */
+        size_t pos = 0;
+        for (size_t b = 0; b < full_blocks; b++) {
+            zupt_aes256_blk(out + pos, in + pos, key, counter);
+            pos += 16;
+            /* Increment counter (big-endian, last 8 bytes) */
+            for (int i = 15; i >= 8; i--) {
+                if (++counter[i] != 0) break;
+            }
+        }
+        in += pos;
+        out += pos;
+
+        /* Tail: partial last block */
+        if (tail_bytes > 0) {
+            uint8_t tmp_in[16], tmp_out[16];
+            memset(tmp_in, 0, 16);
+            memcpy(tmp_in, in, tail_bytes);
+            zupt_aes256_blk(tmp_out, tmp_in, key, counter);
+            memcpy(out, tmp_out, tail_bytes);
+            zupt_secure_wipe(tmp_in, 16);
+            zupt_secure_wipe(tmp_out, 16);
+        }
+
+        zupt_secure_wipe(counter, 16);
+        zupt_secure_wipe(keystream, 16);
+        return;
+    }
+#endif
+
+    /* C table-based fallback */
+    zupt_aes256_ctx ctx;
+    zupt_aes256_init(&ctx, key);
 
     size_t pos = 0;
     while (pos < len) {
@@ -180,9 +270,23 @@ void zupt_aes256_ctr(const uint8_t key[32], const uint8_t nonce[16],
  * KEY DERIVATION
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* FRAMA-C: Key derivation from password + salt */
+/*@ requires \valid(kr);
+  @ requires \valid_read(salt + (0..31));
+  @ requires \valid_read(nonce + (0..15));
+  @ requires strlen(pw) <= 255;
+  @ requires iterations >= 1;
+  @ assigns kr->enc_key[0..31], kr->mac_key[0..31], kr->salt[0..31],
+  @         kr->base_nonce[0..15], kr->iterations, kr->active;
+  @ ensures kr->active == 1;
+*/
 void zupt_derive_keys(zupt_keyring_t *kr, const char *pw,
                       const uint8_t salt[32], const uint8_t nonce[16],
                       uint32_t iterations) {
+    /* Init canaries if not already set */
+    kr->canary_head = ZUPT_CANARY;
+    kr->canary_tail = ZUPT_CANARY;
+
     memcpy(kr->salt, salt, ZUPT_SALT_SIZE);
     memcpy(kr->base_nonce, nonce, ZUPT_NONCE_SIZE);
     kr->iterations = iterations;
@@ -197,6 +301,10 @@ void zupt_derive_keys(zupt_keyring_t *kr, const char *pw,
     memcpy(kr->mac_key, material + 32, 32);
 
     zupt_secure_wipe(material, 64);
+
+    /* Lock key material in RAM — prevent swap to disk */
+    zupt_mlock_keys(kr->enc_key, ZUPT_AES_KEY_SIZE);
+    zupt_mlock_keys(kr->mac_key, ZUPT_HMAC_SIZE);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -207,6 +315,16 @@ void zupt_derive_keys(zupt_keyring_t *kr, const char *pw,
  * Per-block nonce = base_nonce XOR (block_seq as LE 8 bytes in low half)
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* FRAMA-C: Encrypt-then-MAC: produces [nonce][ciphertext][HMAC] */
+/*@ requires \valid_read(&kr->enc_key[0..31]);
+  @ requires \valid_read(&kr->mac_key[0..31]);
+  @ requires \valid_read(&kr->base_nonce[0..15]);
+  @ requires kr->active == 1;
+  @ requires \valid_read(plain + (0..plen-1));
+  @ requires \valid(olen);
+  @ assigns *olen;
+  @ ensures *olen == 16 + plen + 32;
+*/
 uint8_t *zupt_encrypt_buffer(const zupt_keyring_t *kr,
                               const uint8_t *plain, size_t plen,
                               uint64_t block_seq, size_t *olen) {
@@ -234,6 +352,19 @@ uint8_t *zupt_encrypt_buffer(const zupt_keyring_t *kr,
     return pkg;
 }
 
+/* FRAMA-C: Decrypt with MAC verification (Encrypt-then-MAC) */
+/*@ requires \valid_read(&kr->enc_key[0..31]);
+  @ requires \valid_read(&kr->mac_key[0..31]);
+  @ requires kr->active == 1;
+  @ requires pkglen >= 48;
+  @ requires \valid_read(pkg + (0..pkglen-1));
+  @ requires \valid(olen);
+  @ assigns *olen;
+  @ behavior auth_ok:
+  @   ensures \result != \null ==> *olen == pkglen - 48;
+  @ behavior auth_fail:
+  @   ensures \result == \null ==> *olen == pkglen - 48;
+*/
 uint8_t *zupt_decrypt_buffer(const zupt_keyring_t *kr,
                               const uint8_t *pkg, size_t pkglen,
                               uint64_t block_seq, size_t *olen) {
@@ -263,14 +394,21 @@ uint8_t *zupt_decrypt_buffer(const zupt_keyring_t *kr,
 
     zupt_secure_wipe(expected_mac, 32);
 
-    if (diff != 0) return NULL;  /* Authentication failed */
-
-    /* Decrypt */
+    /* CT-REQUIRED: Always decrypt even on MAC failure to prevent timing oracle.
+     * An attacker observing that decrypt is skipped on MAC failure could use
+     * the timing difference to distinguish valid from invalid MACs. */
     uint8_t *plain = (uint8_t *)malloc(clen);
     if (!plain) return NULL;
 
     const uint8_t *nonce = pkg;
     zupt_aes256_ctr(kr->enc_key, nonce, pkg + 16, plain, clen);
+
+    if (diff != 0) {
+        /* Authentication failed — wipe and discard decrypted data */
+        zupt_secure_wipe(plain, clen);
+        free(plain);
+        return NULL;
+    }
 
     return plain;
 }
@@ -427,6 +565,17 @@ static int read_privkey(const char *path, uint8_t ml_pk[1184], uint8_t x_pk[32],
  *   archive_key[64] = SHA-256(hybrid_ikm ‖ ml_kem_ct ‖ ephemeral_pk ‖ "ZUPT-HYBRID-v1")
  *   enc_key = archive_key[0:32], mac_key = archive_key[32:64]
  */
+/* FRAMA-C: Hybrid PQ encrypt init — ML-KEM-768 + X25519 KEM */
+/*@ requires \valid(kr);
+  @ requires \valid_read(pubkeyfile);
+  @ requires \valid(enc_hdr + (0..1199));
+  @ requires \valid(enc_hdr_len);
+  @ assigns kr->enc_key[0..31], kr->mac_key[0..31], kr->base_nonce[0..15],
+  @         kr->iterations, kr->active;
+  @ assigns enc_hdr[0..1199], *enc_hdr_len;
+  @ ensures \result == 0 ==> kr->active == 1;
+  @ ensures \result == 0 ==> *enc_hdr_len == 1137;
+*/
 int zupt_hybrid_encrypt_init(zupt_keyring_t *kr, const char *pubkeyfile,
                               uint8_t *enc_hdr, size_t *enc_hdr_len) {
     uint8_t ml_pk[1184], x_pk[32];
@@ -458,11 +607,17 @@ int zupt_hybrid_encrypt_init(zupt_keyring_t *kr, const char *pubkeyfile,
     zupt_sha3_512(kdf_input, sizeof(kdf_input), archive_key);
 
     /* Set up keyring */
+    kr->canary_head = ZUPT_CANARY;
     memcpy(kr->enc_key, archive_key, 32);
     memcpy(kr->mac_key, archive_key + 32, 32);
     zupt_random_bytes(kr->base_nonce, ZUPT_NONCE_SIZE);
     kr->iterations = 0;
     kr->active = 1;
+    kr->canary_tail = ZUPT_CANARY;
+
+    /* Lock key material in RAM */
+    zupt_mlock_keys(kr->enc_key, ZUPT_AES_KEY_SIZE);
+    zupt_mlock_keys(kr->mac_key, ZUPT_HMAC_SIZE);
 
     /* Build encryption header: enc_type(1) + ml_ct(1088) + eph_pk(32) + base_nonce(16) */
     enc_hdr[0] = ZUPT_ENC_PQ_HYBRID;
@@ -485,6 +640,15 @@ int zupt_hybrid_encrypt_init(zupt_keyring_t *kr, const char *pubkeyfile,
 /*
  * HYBRID DECRYPT INIT: Decapsulate with ML-KEM + X25519, derive archive keys.
  */
+/* FRAMA-C: Hybrid PQ decrypt init — ML-KEM-768 + X25519 decaps */
+/*@ requires \valid(kr);
+  @ requires \valid_read(privkeyfile);
+  @ requires enc_hdr_len >= 1137;
+  @ requires \valid_read(enc_hdr + (0..enc_hdr_len-1));
+  @ assigns kr->enc_key[0..31], kr->mac_key[0..31], kr->base_nonce[0..15],
+  @         kr->iterations, kr->active;
+  @ ensures \result == 0 ==> kr->active == 1;
+*/
 int zupt_hybrid_decrypt_init(zupt_keyring_t *kr, const char *privkeyfile,
                               const uint8_t *enc_hdr, size_t enc_hdr_len) {
     if (enc_hdr_len < 1 + 1088 + 32 + 16) return -1;  /* enc_type + ct + eph_pk + nonce */
@@ -518,11 +682,17 @@ int zupt_hybrid_decrypt_init(zupt_keyring_t *kr, const char *privkeyfile,
     uint8_t archive_key[64];
     zupt_sha3_512(kdf_input, sizeof(kdf_input), archive_key);
 
+    kr->canary_head = ZUPT_CANARY;
     memcpy(kr->enc_key, archive_key, 32);
     memcpy(kr->mac_key, archive_key + 32, 32);
     memcpy(kr->base_nonce, nonce, ZUPT_NONCE_SIZE); /* Read from enc_hdr, NOT random */
     kr->iterations = 0;
     kr->active = 1;
+    kr->canary_tail = ZUPT_CANARY;
+
+    /* Lock key material in RAM */
+    zupt_mlock_keys(kr->enc_key, ZUPT_AES_KEY_SIZE);
+    zupt_mlock_keys(kr->mac_key, ZUPT_HMAC_SIZE);
 
     zupt_secure_wipe(ml_sk, sizeof(ml_sk));
     zupt_secure_wipe(x_sk, 32);

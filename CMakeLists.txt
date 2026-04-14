@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(libzupt VERSION 1.0.2 LANGUAGES C CXX)
+project(libzupt VERSION 1.0.5 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -28,6 +28,7 @@ set(LIBZUPT_C_SOURCES
     ${LIBZUPT_SOURCE_DIR}/src/zupt_crypto.c
     ${LIBZUPT_SOURCE_DIR}/src/zupt_xxh.c
     ${LIBZUPT_SOURCE_DIR}/src/zupt_aes256.c
+    ${LIBZUPT_SOURCE_DIR}/src/zupt_mlock.c
 )
 
 file(GLOB LIBZUPT_CXX_SOURCES

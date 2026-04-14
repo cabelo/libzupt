@@ -30,7 +30,7 @@
   #define zupt_mkdir(p) mkdir(p, 0755)
 #endif
 
-#define ZUPT_VERSION_STRING "1.5.0"
+#define ZUPT_VERSION_STRING "2.1.5"
 #define ZUPT_FORMAT_MAJOR   1
 #define ZUPT_FORMAT_MINOR   4
 
@@ -56,6 +56,7 @@
 #define ZUPT_FLAG_MULTITHREADED (1u << 2) /* Informational: archive was produced with MT */
 #define ZUPT_FLAG_PQ_HYBRID    (1u << 3) /* Post-quantum hybrid encryption */
 #define ZUPT_FLAG_FORMAT_STABLE (1u << 4) /* v1.0: format frozen */
+#define ZUPT_FLAG_DEDUP        (1u << 7) /* Block-level deduplication enabled */
 
 /* Encryption types (stored in encryption header block) */
 #define ZUPT_ENC_PBKDF2     0x01  /* Password-based: PBKDF2 → AES-256-CTR + HMAC */
@@ -65,6 +66,7 @@
 #define ZUPT_BLOCK_DATA       0x00
 #define ZUPT_BLOCK_INDEX      0x02
 #define ZUPT_BLOCK_ENC_HEADER 0x03
+#define ZUPT_BLOCK_DEDUP_REF  0x04  /* Dedup reference: payload = 8B offset of original block */
 
 /* Block flags */
 #define ZUPT_BFLAG_ENCRYPTED  (1u << 0)
@@ -74,6 +76,8 @@
 #define ZUPT_CODEC_ZUPT_LZ 0x0008
 #define ZUPT_CODEC_ZUPT_LZH 0x0009  /* LZ77 + Huffman */
 #define ZUPT_CODEC_ZUPT_LZHP 0x000A /* LZ77 + Huffman + Byte Prediction (default) */
+#define ZUPT_CODEC_VAPTVUPT  0x0010 /* VAPTVUPT: VaptVupt LZ + ANS entropy codec */
+#define ZUPT_CODEC_AUTO      0xFFFF /* Auto-detect: VaptVupt if AVX2, else LZHP */
 
 /* Crypto */
 #define ZUPT_SALT_SIZE       32
@@ -128,14 +132,34 @@ typedef struct {
     uint8_t *payload;
 } zupt_block_t;
 
+/* Buffer canary for keyring overflow detection */
+#define ZUPT_CANARY 0xDEADCAFEBABEFACEULL
+
 typedef struct {
+    uint64_t canary_head;                  /* Must equal ZUPT_CANARY */
     uint8_t enc_key[ZUPT_AES_KEY_SIZE];
     uint8_t mac_key[ZUPT_HMAC_SIZE];
     uint8_t salt[ZUPT_SALT_SIZE];
     uint8_t base_nonce[ZUPT_NONCE_SIZE];
     uint32_t iterations;
     int active;
+    uint64_t canary_tail;                  /* Must equal ZUPT_CANARY */
 } zupt_keyring_t;
+
+/* Check keyring canaries — abort on buffer overflow */
+static inline void zupt_keyring_init(zupt_keyring_t *kr) {
+    volatile uint8_t *p = (volatile uint8_t *)kr;
+    for (size_t i = 0; i < sizeof(*kr); i++) p[i] = 0;
+    kr->canary_head = ZUPT_CANARY;
+    kr->canary_tail = ZUPT_CANARY;
+}
+static inline void zupt_keyring_check(const zupt_keyring_t *kr) {
+    if (kr->canary_head != ZUPT_CANARY || kr->canary_tail != ZUPT_CANARY) {
+        fprintf(stderr, "FATAL: keyring buffer overflow detected (canary corrupted)\n");
+        /* Use exit(127) instead of abort() to avoid needing <stdlib.h> */
+        _exit(127);
+    }
+}
 
 typedef struct {
     char **paths, **arc_paths;
@@ -146,6 +170,7 @@ typedef struct {
     int level; uint32_t block_size; uint16_t codec_id;
     int verbose, encrypt, quiet, solid, threads;
     int pq_mode;           /* 1 = post-quantum hybrid KEM mode */
+    int dedup;             /* 1 = block-level deduplication enabled */
     char password[256];
     char keyfile[ZUPT_MAX_PATH]; /* Path to .zupt-key file */
     zupt_keyring_t keyring;
@@ -188,6 +213,11 @@ static inline uint64_t zupt_le64_get(const uint8_t *p) {
  * SECURE MEMORY WIPE (resists dead-store elimination by compilers)
  * ═══════════════════════════════════════════════════════════════════ */
 
+/* FRAMA-C: Secure memory wipe — resists dead-store elimination */
+/*@ requires \valid((uint8_t *)ptr + (0..len-1));
+  @ assigns ((uint8_t *)ptr)[0..len-1];
+  @ ensures \forall integer i; 0 <= i < len ==> ((uint8_t *)ptr)[i] == 0;
+*/
 static inline void zupt_secure_wipe(void *ptr, size_t len) {
 #if defined(_WIN32)
     SecureZeroMemory(ptr, len);
@@ -244,6 +274,14 @@ uint8_t *zupt_encrypt_buffer(const zupt_keyring_t *kr, const uint8_t *plain, siz
 uint8_t *zupt_decrypt_buffer(const zupt_keyring_t *kr, const uint8_t *pkg, size_t pkglen, uint64_t seq, size_t *olen);
 void zupt_random_bytes(uint8_t *buf, size_t len);
 
+/* ─── Memory locking for key material ─── */
+int  zupt_mlock_keys(void *ptr, size_t len);
+void zupt_munlock_keys(void *ptr, size_t len);
+
+/* ─── Adaptive compression: file type detection ─── */
+/* Returns: -1=store (incompressible), 0=default, 5=medium, 9=max */
+int zupt_detect_filetype(const uint8_t *header, size_t header_len);
+
 /* ─── XXH64 ─── */
 uint64_t zupt_xxh64(const void *data, size_t len, uint64_t seed);
 
@@ -292,4 +330,54 @@ const char *zupt_codec_name(uint16_t id);
 void zupt_default_options(zupt_options_t *o);
 void zupt_format_size(uint64_t bytes, char *buf, size_t cap);
 
-#endif
+/* Resolve ZUPT_CODEC_AUTO to a concrete codec based on hardware.
+ * On x86_64 with AVX2: VaptVupt (fast ANS+SIMD decode).
+ * On all other arches:  Zupt-LZHP (no SIMD dependency).
+ * Decompression of ALL codecs works on ALL architectures. */
+uint16_t zupt_resolve_auto_codec(void);
+
+/* ─── Full-Disk Backup/Restore ─── */
+#define ZUPT_FLAG_DISK_IMAGE   (1u << 6)  /* Archive contains a raw disk/partition image */
+
+/* Compress a raw block device or file as a disk image.
+ * Reads source in block_size chunks, detects zero/sparse regions,
+ * compresses non-zero blocks. Supports encryption + PQ. */
+zupt_error_t zupt_disk_backup(const char *output_path, const char *source_path,
+                               zupt_options_t *opts);
+
+/* Restore a disk image archive to a block device or file.
+ * Writes blocks sequentially, restoring sparse regions as zeros. */
+zupt_error_t zupt_disk_restore(const char *archive_path, const char *target_path,
+                                zupt_options_t *opts);
+
+/* ─── Internal Block I/O (used by format + disk modules) ─── */
+zupt_error_t read_block(FILE *f, zupt_block_t *b);
+zupt_error_t read_enc_header(FILE *f, zupt_archive_header_t *hdr, zupt_options_t *opts);
+zupt_error_t decompress_block(const zupt_block_t *b, const zupt_keyring_t *kr,
+                               uint64_t block_seq, uint8_t **out, size_t *olen);
+zupt_error_t write_enc_header(FILE *out, zupt_archive_header_t *hdr,
+                               zupt_options_t *opts);
+int zupt_w8(FILE *f, uint8_t v);
+int zupt_w16le(FILE *f, uint16_t v);
+int zupt_w64le(FILE *f, uint64_t v);
+
+/* ─── Block-Level Deduplication ─── */
+#define ZUPT_DEDUP_MAX_ENTRIES  (2 * 1024 * 1024)  /* 2M entries, ~48MB RAM */
+
+typedef struct zupt_dedup_ctx zupt_dedup_ctx_t;
+
+zupt_dedup_ctx_t *zupt_dedup_init(void);
+void zupt_dedup_free(zupt_dedup_ctx_t *ctx);
+int  zupt_dedup_lookup(zupt_dedup_ctx_t *ctx, uint64_t fingerprint,
+                       uint64_t *ref_offset, uint32_t *ref_size);
+int  zupt_dedup_insert(zupt_dedup_ctx_t *ctx, uint64_t fingerprint,
+                       uint64_t block_offset, uint32_t block_size);
+void zupt_dedup_record_hit(zupt_dedup_ctx_t *ctx, uint64_t saved_bytes);
+void zupt_dedup_record_block(zupt_dedup_ctx_t *ctx);
+void zupt_dedup_stats(const zupt_dedup_ctx_t *ctx,
+                      uint64_t *blocks_seen, uint64_t *blocks_deduped,
+                      uint64_t *bytes_saved);
+int  zupt_dedup_write_ref(FILE *out, uint64_t ref_offset,
+                          uint32_t orig_size, uint64_t orig_checksum);
+
+#endif /* ZUPT_H */
