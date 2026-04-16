@@ -1,0 +1,57 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.libzupt'
+version = '1.5.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // No external dependencies needed
+}
+
+application {
+    mainClass = 'com.libzupt.ExampleBasic'
+}
+
+tasks.register('compileNative', Exec) {
+    description = 'Compile the native JNI library'
+    group = 'build'
+
+    def osName = System.getProperty('os.name').toLowerCase()
+    def libExtension = osName.contains('mac') ? '.dylib' : (osName.contains('windows') ? '.dll' : '.so')
+    def libName = 'libzupt_jni' + libExtension
+
+    commandLine 'bash', '-c', """
+        cd '$projectDir/../..'
+        mkdir -p build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DLIBZUPT_BUILD_TESTS=OFF -DLIBZUPT_BUILD_EXAMPLES=OFF -DLIBZUPT_BUILD_PYTHON=OFF >/dev/null 2>&1
+        make zupt_static >/dev/null 2>&1
+    """
+
+    doLast {
+        println "Native library compiled successfully"
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn compileNative
+}
+
+tasks.register('runExample', JavaExec) {
+    description = 'Run a specific example class'
+    group = 'examples'
+
+    classpath = sourceSets.main.runtimeClasspath
+    systemProperty 'java.library.path', '$buildDir/libs'
+}
