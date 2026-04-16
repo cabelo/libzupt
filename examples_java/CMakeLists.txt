@@ -1,6 +1,6 @@
 # CMakeLists.txt for Java JNI bindings
 cmake_minimum_required(VERSION 3.15)
-project(zupt_jni VERSION 1.0.5 LANGUAGES CXX)
+project(zupt_jni VERSION 1.0.6 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
