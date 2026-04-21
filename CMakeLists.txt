@@ -50,7 +50,7 @@ target_include_directories(zupt_shared PUBLIC
 )
 
 target_compile_definitions(zupt_shared PRIVATE ZUPT_EXPORTS)
-target_compile_features(zupt_shared PUBLIC cxx_std_17)
+target_compile_features(zupt_shared PUBLIC cxx_std_11)
 
 if(MSVC)
     target_compile_options(zupt_shared PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
