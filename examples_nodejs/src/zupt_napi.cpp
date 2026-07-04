@@ -39,6 +39,7 @@ public:
     ~SecureBufferWrapper();
 
 private:
+    Napi::Value Copy(const Napi::CallbackInfo& info);
     Napi::Value Zeroize(const Napi::CallbackInfo& info);
     Napi::Value ToBuffer(const Napi::CallbackInfo& info);
     Napi::Value Destroy(const Napi::CallbackInfo& info);
@@ -50,6 +51,7 @@ private:
 
 Napi::Object SecureBufferWrapper::Init(Napi::Env env, Napi::Object exports) {
     Napi::Function ctor = Napi::ObjectWrap<SecureBufferWrapper>::DefineClass(env, "SecureBuffer", {
+        Napi::ObjectWrap<SecureBufferWrapper>::InstanceMethod("copy", &SecureBufferWrapper::Copy),
         Napi::ObjectWrap<SecureBufferWrapper>::InstanceMethod("zeroize", &SecureBufferWrapper::Zeroize),
         Napi::ObjectWrap<SecureBufferWrapper>::InstanceMethod("toBuffer", &SecureBufferWrapper::ToBuffer),
         Napi::ObjectWrap<SecureBufferWrapper>::InstanceMethod("destroy", &SecureBufferWrapper::Destroy),
@@ -71,6 +73,29 @@ SecureBufferWrapper::SecureBufferWrapper(const Napi::CallbackInfo& info) : Napi:
 }
 
 SecureBufferWrapper::~SecureBufferWrapper() = default;
+
+Napi::Value SecureBufferWrapper::Copy(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (!buffer_) {
+        throw Napi::Error::New(env, "SecureBuffer has been destroyed");
+    }
+
+    if (info.Length() < 1 || !info[0].IsTypedArray()) {
+        throw Napi::TypeError::New(env, "copy() expects a Buffer or Uint8Array");
+    }
+
+    Napi::Uint8Array input = info[0].As<Napi::Uint8Array>();
+    size_t inputLen = input.ByteLength();
+    size_t bufferLen = buffer_->size();
+    size_t copyLen = inputLen < bufferLen ? inputLen : bufferLen;
+
+    if (copyLen > 0) {
+        memcpy(buffer_->data(), input.Data(), copyLen);
+    }
+
+    return Napi::Number::New(env, copyLen);
+}
 
 Napi::Value SecureBufferWrapper::Zeroize(const Napi::CallbackInfo& info) {
     if (buffer_) {
