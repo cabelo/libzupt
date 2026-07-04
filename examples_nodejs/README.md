@@ -14,8 +14,14 @@ A libzupt é uma biblioteca de criptografia híbrida pós-quanto (ML-KEM-768 + X
 ```bash
 cd examples_nodejs
 
+rm -rf build
+rm -rf node_modules
+rm -f package-lock.json
+
 # Instalar dependências (opcional para exemplos puro-JS)
 npm install
+npm run build
+
 ```
 
 ## Exemplos

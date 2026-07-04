@@ -5,8 +5,11 @@
       "type": "loadable_module",
       "sources": [
         "src/zupt_napi.cpp",
-        "../src/zupt_crypto.cpp",
+
+        "src/zupt_crypto_cpp_bridge.cpp",
+
         "../src/zupt_crypto.c",
+        "../src/zupt_cxx.c",
         "../src/zupt_mlkem.c",
         "../src/zupt_x25519.c",
         "../src/zupt_sha256.c",
@@ -17,21 +20,47 @@
       ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")",
-        "../include"
+        "../include",
+        "../src"
       ],
       "dependencies": [
         "<!(node -p \"require('node-addon-api').gyp\")"
       ],
-      "cflags!": [ "-fno-exceptions" ],
-      "cflags_cc!": [ "-fno-exceptions" ],
-      "defines": [ "NAPI_DISABLE_CPP_EXCEPTIONS" ],
+      "defines": [
+        "NAPI_CPP_EXCEPTIONS"
+      ],
+      "cflags": [
+        "-fPIC"
+      ],
+      "cflags_cc": [
+        "-std=c++17",
+        "-fPIC",
+        "-fexceptions"
+      ],
+      "cflags!": [
+        "-fno-exceptions"
+      ],
+      "cflags_cc!": [
+        "-fno-exceptions"
+      ],
       "conditions": [
-        ["OS=='mac'", {
-          "xcode_settings": {
-            "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
-            "CLANG_CXX_LIBRARY": "libc++"
+        [
+          "OS=='linux'",
+          {
+            "libraries": [
+              "-lm"
+            ]
           }
-        }]
+        ],
+        [
+          "OS=='mac'",
+          {
+            "xcode_settings": {
+              "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
+              "CLANG_CXX_LIBRARY": "libc++"
+            }
+          }
+        ]
       ]
     }
   ]
