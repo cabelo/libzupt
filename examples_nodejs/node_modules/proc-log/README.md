@@ -76,13 +76,13 @@ const { log, output, input, time } = require('proc-log')
 
 #### input
 
-* `input.start(fn?)` calls `process.emit('input', 'start')`
+* `input.start(...args)` calls `process.emit('input', 'start', ...args)`
 
-  Used to tell the consumer that the terminal is going to begin reading user input. Returns a function that will call `input.end()` for convenience.
+  Used to tell the consumer that the terminal is going to begin reading user input. Returns a function that will call `input.end(...args)` for convenience.
   
-  This also takes an optional callback which will run `input.end()` on its completion. If the callback returns a `Promise` then `input.end()` will be run during `finally()`.
+  If the first argument is a function, it will be used as a callback which runs `input.end()` on its completion. If the callback returns a `Promise` then `input.end(...args)` will be run during `finally()`.
 
-* `input.end()` calls `process.emit('input', 'end')`
+* `input.end(...args)` calls `process.emit('input', 'end', ...args)`
 
   Used to tell the consumer that the terminal has stopped reading user input.
 
