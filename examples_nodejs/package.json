@@ -1,0 +1,26 @@
+{
+  "name": "libzupt-examples",
+  "version": "2.1.5",
+  "description": "Node.js examples for libzupt - Hybrid Post-Quantum Encryption",
+  "main": "index.js",
+  "gypfile": true,
+  "scripts": {
+    "install": "node-gyp rebuild",
+    "build": "node-gyp rebuild",
+    "test": "node example_basic.js"
+  },
+  "dependencies": {
+    "node-addon-api": "^6.1.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^10.0.0"
+  },
+  "keywords": [
+    "post-quantum",
+    "encryption",
+    "ml-kem",
+    "x25519",
+    "hybrid"
+  ],
+  "license": "MIT"
+}
