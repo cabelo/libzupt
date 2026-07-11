@@ -1,25 +1,25 @@
-# libzupt — exemplos PHP com FFI
+# libzupt — PHP FFI Examples
 
-Esta pasta contém exemplos PHP equivalentes aos exemplos de `examples_python`, usando diretamente a ABI C da `libzupt` por meio da extensão PHP FFI.
+This directory contains PHP examples equivalent to those in `examples_python`, using the `libzupt` C ABI directly through the PHP FFI extension.
 
-## Requisitos
+## Requirements
 
-- Linux ou macOS;
-- PHP 8.1 ou superior;
-- extensão `FFI` carregada;
-- `libzupt.so`/`libzupt.dylib` compilada ou instalada;
-- símbolos da ABI C definidos em `include/zupt_cxx.h`.
+* Linux or macOS;
+* PHP 8.1 or later;
+* the `FFI` extension enabled;
+* a compiled or installed `libzupt.so`/`libzupt.dylib`;
+* C ABI symbols defined in `include/zupt_cxx.h`.
 
-Verifique o ambiente:
+Check your environment:
 
 ```bash
 php -v
 php -m | grep -i '^FFI$'
 ```
 
-## Compilar a libzupt
+## Building libzupt
 
-A partir da raiz do projeto:
+From the project root directory:
 
 ```bash
 mkdir -p build
@@ -27,26 +27,26 @@ cmake -S . -B build
 cmake --build build -j"$(nproc)"
 ```
 
-O wrapper procura automaticamente, nesta ordem:
+The wrapper searches for the library in the following order:
 
-1. caminho informado ao construtor de `ZuptFFI`;
-2. variável `LIBZUPT_PATH`;
-3. `build/libzupt.so` na raiz do projeto;
-4. caminhos comuns do sistema e nomes disponíveis pelo carregador dinâmico.
+1. the path passed to the `ZuptFFI` constructor;
+2. the `LIBZUPT_PATH` environment variable;
+3. `build/libzupt.so` in the project root directory;
+4. common system paths and library names available through the dynamic loader.
 
-Para informar explicitamente o arquivo:
+To explicitly specify the library file:
 
 ```bash
 export LIBZUPT_PATH="$PWD/build/libzupt.so"
 ```
 
-Se a biblioteca foi instalada em um diretório não padrão, também pode ser necessário:
+If the library was installed in a non-standard directory, you may also need to set:
 
 ```bash
 export LD_LIBRARY_PATH="$(dirname "$LIBZUPT_PATH"):${LD_LIBRARY_PATH:-}"
 ```
 
-## Executar
+## Running the Examples
 
 ```bash
 cd examples_php
@@ -57,22 +57,22 @@ php -d ffi.enable=1 example_random.php
 php -d ffi.enable=1 example_secure_buffer.php
 ```
 
-Ou todos de uma vez:
+Or run all examples at once:
 
 ```bash
 ./run_all.sh
 ```
 
-## Exemplos
+## Examples
 
-- `example_basic.php`: geração de chaves e criptografia/descriptografia em memória;
-- `example_file.php`: criptografia e restauração de arquivo;
-- `example_keygen.php`: salvar, carregar e exportar chaves;
-- `example_random.php`: bytes aleatórios, SHA-256 e SHA3-512;
-- `example_secure_buffer.php`: buffer nativo zerável para reduzir a permanência de dados sensíveis;
-- `Zupt.php`: wrapper FFI reutilizável.
+* `example_basic.php`: key generation and in-memory encryption/decryption;
+* `example_file.php`: file encryption and restoration;
+* `example_keygen.php`: save, load, and export keys;
+* `example_random.php`: random bytes, SHA-256, and SHA3-512;
+* `example_secure_buffer.php`: zeroizable native buffer designed to reduce the lifetime of sensitive data in memory;
+* `Zupt.php`: reusable FFI wrapper.
 
-## Uso mínimo
+## Minimal Usage
 
 ```php
 <?php
@@ -81,7 +81,7 @@ require_once __DIR__ . '/Zupt.php';
 $zupt = new ZuptFFI();
 $keys = $zupt->generateKeyPair();
 
-$encrypted = $zupt->encrypt($keys['publicKey'], 'mensagem secreta');
+$encrypted = $zupt->encrypt($keys['publicKey'], 'secret message');
 $plaintext = $zupt->decrypt(
     $keys['secretKey'],
     $encrypted['ciphertext'],
@@ -91,33 +91,35 @@ $plaintext = $zupt->decrypt(
 echo $plaintext, PHP_EOL;
 ```
 
-## Formato e tamanhos usados
+## Data Format and Sizes
 
-Os valores abaixo seguem a implementação atual da ABI C:
+The values below follow the current C ABI implementation:
 
-- chave pública híbrida: `1224` bytes;
-- chave privada híbrida: `3656` bytes;
-- header de criptografia: `1137` bytes;
-- composição: ML-KEM-768 + X25519.
+* hybrid public key: `1224` bytes;
+* hybrid private key: `3656` bytes;
+* encryption header: `1137` bytes;
+* composition: ML-KEM-768 + X25519.
 
-O ciphertext e o header são dados binários. Não use funções de texto que possam alterar bytes ou codificação.
+The ciphertext and encryption header contain binary data. Do not use text-processing functions that may alter their bytes or encoding.
 
-## Segurança do `ZuptSecureBuffer`
+## `ZuptSecureBuffer` Security Considerations
 
-`ZuptSecureBuffer` aloca memória nativa e a preenche com zeros quando `zeroize()` é chamado ou quando o objeto é destruído. Isso reduz a permanência do conteúdo naquele buffer específico.
+`ZuptSecureBuffer` allocates native memory and overwrites it with zeros when `zeroize()` is called or when the object is destroyed. This reduces the lifetime of the contents stored in that specific buffer.
 
-O PHP pode manter cópias temporárias em strings, logs, exceções ou estruturas internas. Portanto, o exemplo não oferece uma garantia absoluta de eliminação de todos os vestígios da informação no processo.
+PHP may retain temporary copies in strings, logs, exceptions, or internal data structures. Therefore, this example does not provide an absolute guarantee that every trace of the information will be removed from the process memory.
 
-## Observação sobre Windows
+## Windows Note
 
-A ABI atual retorna buffers alocados por `malloc()` e não fornece uma função pública `zupt_free()`. Para evitar liberar memória com um runtime C incompatível, estes exemplos bloqueiam a execução no Windows. Uma evolução recomendada da ABI é exportar:
+The current ABI returns buffers allocated with `malloc()` and does not provide a public `zupt_free()` function. To avoid freeing memory through an incompatible C runtime, these examples prevent execution on Windows.
+
+A recommended ABI improvement is to export:
 
 ```c
 void zupt_free(void *ptr);
 ```
 
-Assim PHP, Node.js e outras linguagens poderão devolver buffers à mesma biblioteca de forma portátil.
+This would allow PHP, Node.js, and other languages to safely return allocated buffers to the same library in a portable manner.
 
-## Licença
+## License
 
 SPDX-License-Identifier: MIT
