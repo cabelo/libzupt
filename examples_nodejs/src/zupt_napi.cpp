@@ -16,10 +16,7 @@
 /* Helper to convert napi_value to std::vector<uint8_t> */
 static std::vector<uint8_t> GetBufferAsVector(const Napi::Value& value) {
     Napi::Uint8Array arr = value.As<Napi::Uint8Array>();
-    size_t length = arr.ByteLength();
-    std::vector<uint8_t> data(length);
-    memcpy(data.data(), arr.Data(), length);
-    return data;
+    return std::vector<uint8_t>(arr.Data(), arr.Data() + arr.ByteLength());
 }
 
 /* Helper to create a Buffer from vector */
