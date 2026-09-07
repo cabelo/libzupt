@@ -1,0 +1,36 @@
+[package]
+name = "libzupt-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Rust FFI bindings and examples for libzupt (hybrid post-quantum encryption)"
+license = "MIT"
+
+[lib]
+name = "libzupt_rust"
+path = "src/lib.rs"
+
+[dependencies]
+hex = "0.4"
+
+[build-dependencies]
+bindgen = "0.71"
+
+[[example]]
+name = "example_basic"
+path = "examples/example_basic.rs"
+
+[[example]]
+name = "example_file"
+path = "examples/example_file.rs"
+
+[[example]]
+name = "example_keygen"
+path = "examples/example_keygen.rs"
+
+[[example]]
+name = "example_random"
+path = "examples/example_random.rs"
+
+[[example]]
+name = "example_secure_buffer"
+path = "examples/example_secure_buffer.rs"
