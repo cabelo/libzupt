@@ -7,6 +7,7 @@
 
 #include "zupt.hpp"
 #include "zupt_cxx.h"
+#include "libzupt_version.h"
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -189,17 +190,31 @@ void KeyGenerator::exportPublicKey(const std::string& privfile, const std::strin
 }
 
 void KeyGenerator::saveKeyPair(const KeyPair& kp, const std::string& filename) {
-    /* The key pair file contains the private key in the clear, so restrict it
-     * to owner-only (0600) before writing any secret bytes. ofstream offers no
-     * way to set the mode, so create/tighten the file first via open()+fchmod. */
+    /* Keep permissions and writes on the same descriptor. Never follow a
+     * symlink or truncate a shared/special file while saving a private key. */
 #if !defined(_WIN32)
-    int fd = ::open(filename.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    int fd = ::open(filename.c_str(), O_WRONLY | O_CREAT | O_NOFOLLOW | O_NONBLOCK, 0600);
     if (fd < 0) {
         throw ZuptError(ErrorCode::ERR_IO, "Cannot create key file: " + filename);
     }
-    ::fchmod(fd, 0600);  /* enforce 0600 even if the file already existed */
-    ::close(fd);
-#endif
+    struct stat st {};
+    if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_nlink != 1 ||
+        st.st_uid != ::geteuid() ||
+        ::fchmod(fd, 0600) != 0 || ::ftruncate(fd, 0) != 0) {
+        ::close(fd);
+        throw ZuptError(ErrorCode::ERR_IO, "Cannot secure key file: " + filename);
+    }
+    FILE* file = ::fdopen(fd, "wb");
+    if (!file) {
+        ::close(fd);
+        throw ZuptError(ErrorCode::ERR_IO, "Cannot open key stream: " + filename);
+    }
+    const size_t written = std::fwrite(kp.secret_key.data(), 1, kp.secret_key.size(), file);
+    const int closed = std::fclose(file);
+    if (written != kp.secret_key.size() || closed != 0) {
+        throw ZuptError(ErrorCode::ERR_IO, "Cannot write key file");
+    }
+#else
 
     std::ofstream file(filename, std::ios::binary | std::ios::trunc);
     if (!file) {
@@ -210,6 +225,7 @@ void KeyGenerator::saveKeyPair(const KeyPair& kp, const std::string& filename) {
                     kp.secret_key.size())) {
         throw ZuptError(ErrorCode::ERR_IO, "Cannot write key file");
     }
+#endif
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -352,11 +368,6 @@ Decryptor::decryptMemory(const uint8_t* ciphertext, size_t ciphertextSize,
             ", got " + std::to_string(encHeader.size()));
     }
 
-    // Empty ciphertext means empty plaintext
-    if (ciphertextSize == 0) {
-        return std::vector<uint8_t>();
-    }
-
     size_t plaintext_len = 0;
 
     uint8_t* plaintext = zupt_hybrid_decrypt(
@@ -451,7 +462,7 @@ void secureWipe(void* ptr, size_t size) {
 }
 
 const char* getVersion() {
-    return ZUPT_VERSION_STRING;
+    return LIBZUPT_VERSION_STRING;
 }
 
 const char* getLibraryName() {

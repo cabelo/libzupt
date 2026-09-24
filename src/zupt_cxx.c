@@ -177,11 +177,14 @@ uint8_t* zupt_hybrid_encrypt(const uint8_t* pub_key, size_t pub_key_len,
     size_t total_size = 0;
     uint8_t* ciphertext = NULL;
 
-    for (size_t pos = 0; pos < plaintext_len; pos += ZUPT_ENCRYPT_BLOCK_SIZE) {
-        size_t block_len = (pos + ZUPT_ENCRYPT_BLOCK_SIZE <= plaintext_len) ? ZUPT_ENCRYPT_BLOCK_SIZE : plaintext_len - pos;
+    size_t pos = 0;
+    do {
+        size_t remaining = plaintext_len - pos;
+        size_t block_len = remaining < ZUPT_ENCRYPT_BLOCK_SIZE ? remaining : ZUPT_ENCRYPT_BLOCK_SIZE;
         size_t out_len = 0;
 
-        uint8_t* encrypted = zupt_encrypt_buffer(&kr, plaintext + pos, block_len,
+        /* Empty messages still need a nonce and MAC. Avoid arithmetic on NULL. */
+        uint8_t* encrypted = zupt_encrypt_buffer(&kr, plaintext ? plaintext + pos : NULL, block_len,
                                                   pos / ZUPT_ENCRYPT_BLOCK_SIZE, &out_len);
         if (!encrypted) {
             zupt_secure_wipe(&kr, sizeof(kr));
@@ -201,6 +204,12 @@ uint8_t* zupt_hybrid_encrypt(const uint8_t* pub_key, size_t pub_key_len,
         /* Calculate total size with payload length prefix */
         size_t block_size = ZUPT_PAYLOAD_LEN_SIZE + encrypted_size;
 
+        if (block_size > SIZE_MAX - total_size) {
+            zupt_secure_wipe(&kr, sizeof(kr));
+            free(encrypted);
+            free(ciphertext);
+            return NULL;
+        }
         uint8_t* new_buf = (uint8_t*)realloc(ciphertext, total_size + block_size);
         if (!new_buf) {
             zupt_secure_wipe(&kr, sizeof(kr));
@@ -222,7 +231,8 @@ uint8_t* zupt_hybrid_encrypt(const uint8_t* pub_key, size_t pub_key_len,
         memcpy(ciphertext + total_size + ZUPT_PAYLOAD_LEN_SIZE, encrypted, encrypted_size);
         total_size += block_size;
         free(encrypted);
-    }
+        pos += block_len;
+    } while (pos < plaintext_len);
 
     zupt_secure_wipe(&kr, sizeof(kr));
     *ciphertext_len = total_size;
@@ -251,11 +261,11 @@ uint8_t* zupt_hybrid_decrypt(const uint8_t* priv_key, size_t priv_key_len,
     size_t total_size = 0;
     uint8_t* plaintext = NULL;
     size_t pos = 0;
-    int block_num = 0;
+    uint64_t block_num = 0;
 
     while (pos < ciphertext_len) {
         /* Check for valid block header (payload_len + nonce + hmac) */
-        if (pos + ZUPT_PAYLOAD_LEN_SIZE + 16 + 32 > ciphertext_len) {
+        if (ciphertext_len - pos < ZUPT_PAYLOAD_LEN_SIZE + 16 + 32) {
             zupt_secure_wipe(&kr, sizeof(kr));
             free(plaintext);
             return NULL;
@@ -270,11 +280,17 @@ uint8_t* zupt_hybrid_decrypt(const uint8_t* priv_key, size_t priv_key_len,
                           ((size_t)ciphertext[pos + 2] << 16) |
                           ((size_t)ciphertext[pos + 3] << 24);
 
-        if (block_len == 0) break;
+        /* A zero payload is valid only as one authenticated empty message. */
+        if (block_len > ZUPT_ENCRYPT_BLOCK_SIZE ||
+            (block_len == 0 && (pos != 0 || ciphertext_len != 52))) {
+            zupt_secure_wipe(&kr, sizeof(kr));
+            free(plaintext);
+            return NULL;
+        }
 
         /* Verify block fits in remaining ciphertext */
         size_t block_size = ZUPT_PAYLOAD_LEN_SIZE + 16 + block_len + 32;
-        if (pos + block_size > ciphertext_len) {
+        if (block_size > ciphertext_len - pos) {
             zupt_secure_wipe(&kr, sizeof(kr));
             free(plaintext);
             return NULL;
@@ -290,7 +306,8 @@ uint8_t* zupt_hybrid_decrypt(const uint8_t* priv_key, size_t priv_key_len,
             return NULL;
         }
 
-        uint8_t* new_buf = (uint8_t*)realloc(plaintext, total_size + out_len);
+        size_t new_size = total_size + out_len;
+        uint8_t* new_buf = (uint8_t*)realloc(plaintext, new_size ? new_size : 1);
         if (!new_buf) {
             zupt_secure_wipe(&kr, sizeof(kr));
             free(decrypted);

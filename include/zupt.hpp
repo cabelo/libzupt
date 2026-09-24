@@ -11,12 +11,14 @@
 #ifndef ZUPT_HPP
 #define ZUPT_HPP
 
+#include "zupt_cxx.h"
 #include <cstdint>
 #include <cstddef>
 #include <string>
 #include <vector>
 #include <memory>
 #include <stdexcept>
+#include <utility>
 #include <string.h>
 namespace zupt {
 
@@ -94,6 +96,8 @@ struct KeyPair {
  * SECURE BUFFER - Zeroized on destruction
  * ═══════════════════════════════════════════════════════════════════ */
 
+ZUPT_API void secureWipe(void* ptr, size_t size);
+
 class SecureBuffer {
 public:
     explicit SecureBuffer(size_t size)
@@ -124,8 +128,17 @@ public:
     SecureBuffer& operator=(const SecureBuffer&) = delete;
 
     // Allow moving
-    SecureBuffer(SecureBuffer&&) = default;
-    SecureBuffer& operator=(SecureBuffer&&) = default;
+    SecureBuffer(SecureBuffer&& other) noexcept
+        : data_(std::move(other.data_)), size_(std::exchange(other.size_, 0)) {}
+
+    SecureBuffer& operator=(SecureBuffer&& other) noexcept {
+        if (this != &other) {
+            zeroize();
+            data_ = std::move(other.data_);
+            size_ = std::exchange(other.size_, 0);
+        }
+        return *this;
+    }
 
     uint8_t* data() noexcept { return data_.get(); }
     const uint8_t* data() const noexcept { return data_.get(); }
@@ -133,15 +146,17 @@ public:
 
     void zeroize() noexcept {
         if (data_ && size_ > 0) {
-            memset(data_.get(), 0, size_);
+            secureWipe(data_.get(), size_);
         }
     }
 
     std::vector<uint8_t> toVector() const {
+        if (size_ == 0) return {};
         return std::vector<uint8_t>(data_.get(), data_.get() + size_);
     }
 
     std::string toString() const {
+        if (size_ == 0) return {};
         return std::string(reinterpret_cast<const char*>(data_.get()), size_);
     }
 
@@ -268,7 +283,7 @@ std::vector<uint8_t> sha256(const std::string& data);
 std::vector<uint8_t> sha3_512(const uint8_t* data, size_t size);
 
 // Securely wipe memory
-void secureWipe(void* ptr, size_t size);
+ZUPT_API void secureWipe(void* ptr, size_t size);
 
 /* ═══════════════════════════════════════════════════════════════════
  * VERSION INFORMATION
