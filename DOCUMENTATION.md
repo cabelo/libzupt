@@ -1,3 +1,5 @@
+[English documentation](docs/en/README.md) | [Documentação em português do Brasil](docs/pt-BR/README.md)
+
 # libzupt Documentation
 
 ## Index

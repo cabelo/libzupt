@@ -1,5 +1,28 @@
 # Histórico de Alterações do libzupt
 
+## v1.0.14 (2026-09-24)
+
+- Authenticate empty messages and reject missing ciphertext, forged zero-length
+  terminators, reordered/replayed blocks and changes to the header nonce.
+- Check record bounds before allocating or decrypting payloads.
+- Keep POSIX private-key writes on one checked descriptor with mode 0600;
+  reject symbolic links, hard links and nonregular files.
+- Wipe SecureBuffer storage before move assignment and leave moved-from buffers empty.
+- Report the libzupt version consistently and install usable CMake imported targets.
+- Keep test assertions enabled in Release builds; add authentication, key-storage,
+  secure-buffer and relocated-package regression coverage.
+- Validate release tags, restrict CI permissions, pin actions and report actual
+  build/test results. Package signed-tag sources with level-9 solid compression,
+  archive comments, extraction verification and SHA-256 checksums.
+- Add English and Brazilian Portuguese build, API, security and release guides.
+
+Compatibility: empty messages now require a 52-byte authenticated ciphertext;
+legacy zero-byte ciphertext is rejected. Nonempty record layouts are unchanged.
+The format still cannot detect removal of complete trailing blocks; applications
+requiring completeness need independently authenticated length/digest metadata.
+This release is not a cryptographic certification or a complete binding audit.
+
+
 ## Não lançado
 
 ### Segurança

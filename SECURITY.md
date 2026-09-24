@@ -4,6 +4,20 @@
 
 libzupt implements post-quantum hybrid cryptography using **ML-KEM-768** (FIPS 203) combined with **X25519** (RFC 7748). This document describes the security model, implemented protections, and best practices.
 
+## Current format limits (1.0.14)
+
+Empty messages require an authenticated record; legacy zero-byte ciphertexts
+are rejected. Block authentication now checks the expected sequence nonce.
+There is still no authenticated total length or end marker: removing complete
+trailing blocks can leave a valid prefix. Applications that require message
+completeness must authenticate the expected length or digest independently.
+Do not interpret a failed decrypt as empty plaintext.
+
+The release review and regression tests cover selected library boundaries;
+they do not certify the cryptographic primitives or every language binding.
+See the [English](docs/en/README.md) and [pt-BR](docs/pt-BR/README.md) guides for
+format compatibility, memory ownership and private-key storage constraints.
+
 ## Security Model
 
 ### Post-Quantum Hybrid
