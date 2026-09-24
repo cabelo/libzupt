@@ -55,16 +55,18 @@ def main():
             with gzip.GzipFile(filename="", mode="wb", fileobj=dst, compresslevel=9, mtime=0) as gz:
                 shutil.copyfileobj(src, gz)
         (output / "release-notes.txt").write_text(notes, encoding="utf-8")
-        archive = output / f"{stem}.zupt"
+        (scratch / "release-notes.txt").write_text(notes, encoding="utf-8")
+        archive = scratch / f"{stem}.zupt"
         run("zupt", "compress", "-l", "9", "--solid", "--comment-file",
-            str(output / "release-notes.txt"), str(archive), source.name, cwd=scratch)
-        run("zupt", "test", str(archive))
+            "release-notes.txt", archive.name, source.name, cwd=scratch)
+        run("zupt", "test", archive.name, cwd=scratch)
         restored = scratch / "restored"
         restored.mkdir()
-        run("zupt", "extract", "-o", str(restored), str(archive))
+        run("zupt", "extract", "-o", restored.name, archive.name, cwd=scratch)
         if hashlib.sha256(source.read_bytes()).digest() != hashlib.sha256(
                 (restored / source.name).read_bytes()).digest():
             raise RuntimeError("archive roundtrip differs from the tagged source")
+        shutil.copyfile(archive, output / archive.name)
     with (output / "SHA256SUMS").open("w", encoding="ascii") as checksums:
         for suffix in (".tar.gz", ".zupt"):
             artifact = output / (stem + suffix)
