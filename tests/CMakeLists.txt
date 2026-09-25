@@ -5,6 +5,12 @@ function(add_zupt_test name)
     add_executable(zupt_test_${name} ${name}.cpp)
     target_link_libraries(zupt_test_${name} zupt_shared)
     target_include_directories(zupt_test_${name} PRIVATE ${LIBZUPT_INCLUDE_DIR})
+    # Most existing tests use assert; keep those checks active in Release builds.
+    if(MSVC)
+        target_compile_options(zupt_test_${name} PRIVATE /UNDEBUG)
+    else()
+        target_compile_options(zupt_test_${name} PRIVATE -UNDEBUG)
+    endif()
     add_test(NAME zupt_test_${name} COMMAND zupt_test_${name})
 endfunction()
 
@@ -14,6 +20,11 @@ add_zupt_test(encrypt)
 add_zupt_test(decrypt)
 add_zupt_test(roundtrip)
 add_zupt_test(file_ops)
+add_zupt_test(authentication)
+add_zupt_test(secure_buffer)
+if(UNIX)
+    add_zupt_test(key_storage)
+endif()
 
 # Create a simple test runner script
 configure_file(

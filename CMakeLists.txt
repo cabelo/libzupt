@@ -1,5 +1,8 @@
-cmake_minimum_required(VERSION 3.5)
-project(libzupt VERSION 1.0.6 LANGUAGES C CXX)
+cmake_minimum_required(VERSION 3.15)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/include/libzupt_version.h" LIBZUPT_VERSION_LINE
+    REGEX "^#define LIBZUPT_VERSION_STRING")
+string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" LIBZUPT_VERSION "${LIBZUPT_VERSION_LINE}")
+project(libzupt VERSION ${LIBZUPT_VERSION} LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -12,11 +15,6 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(LIBZUPT_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(LIBZUPT_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(LIBZUPT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-get_filename_component(LIBZUPT_EXTRA_INCLUDE_DIR
-    ${LIBZUPT_SOURCE_DIR}/../zupt/include
-    ABSOLUTE
-)
 
 # Sources
 set(LIBZUPT_C_SOURCES
@@ -45,12 +43,11 @@ add_library(zupt_shared SHARED
 
 target_include_directories(zupt_shared PUBLIC
     $<BUILD_INTERFACE:${LIBZUPT_INCLUDE_DIR}>
-    $<BUILD_INTERFACE:${LIBZUPT_EXTRA_INCLUDE_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 
 target_compile_definitions(zupt_shared PRIVATE ZUPT_EXPORTS)
-target_compile_features(zupt_shared PUBLIC cxx_std_11)
+target_compile_features(zupt_shared PUBLIC cxx_std_17)
 
 if(MSVC)
     target_compile_options(zupt_shared PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS)
@@ -82,11 +79,10 @@ add_library(zupt_static STATIC
 
 target_include_directories(zupt_static PUBLIC
     $<BUILD_INTERFACE:${LIBZUPT_INCLUDE_DIR}>
-    $<BUILD_INTERFACE:${LIBZUPT_EXTRA_INCLUDE_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 
-target_compile_definitions(zupt_static PRIVATE ZUPT_STATIC)
+target_compile_definitions(zupt_static PUBLIC ZUPT_STATIC)
 target_compile_features(zupt_static PUBLIC cxx_std_17)
 
 if(MSVC)
@@ -111,14 +107,21 @@ set_target_properties(zupt_static PROPERTIES
 include(GNUInstallDirs)
 
 install(TARGETS zupt_shared zupt_static
+    EXPORT libzuptTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+install(EXPORT libzuptTargets
+    NAMESPACE libzupt::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/libzupt
+)
+
 install(FILES
     ${LIBZUPT_INCLUDE_DIR}/zupt.hpp
     ${LIBZUPT_INCLUDE_DIR}/zupt_cxx.h
+    ${LIBZUPT_INCLUDE_DIR}/libzupt_version.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 

@@ -373,7 +373,6 @@ uint8_t *zupt_encrypt_buffer(const zupt_keyring_t *kr,
 uint8_t *zupt_decrypt_buffer(const zupt_keyring_t *kr,
                               const uint8_t *pkg, size_t pkglen,
                               uint64_t block_seq, size_t *olen) {
-    (void)block_seq;
     if (pkglen < ZUPT_NONCE_SIZE + ZUPT_HMAC_SIZE) return NULL;
 
     size_t clen = pkglen - ZUPT_NONCE_SIZE - ZUPT_HMAC_SIZE;
@@ -397,12 +396,19 @@ uint8_t *zupt_decrypt_buffer(const zupt_keyring_t *kr,
         diff |= (uint64_t)(expected_mac[i] ^ stored_mac[i]);
 #endif
 
+    /* Bind each authenticated block to its position and the header nonce. */
+    for (int i = 0; i < ZUPT_NONCE_SIZE; i++) {
+        uint8_t expected_nonce = kr->base_nonce[i];
+        if (i < 8) expected_nonce ^= (uint8_t)(block_seq >> (i * 8));
+        diff |= (uint64_t)(expected_nonce ^ pkg[i]);
+    }
+
     zupt_secure_wipe(expected_mac, 32);
 
     /* CT-REQUIRED: Always decrypt even on MAC failure to prevent timing oracle.
      * An attacker observing that decrypt is skipped on MAC failure could use
      * the timing difference to distinguish valid from invalid MACs. */
-    uint8_t *plain = (uint8_t *)malloc(clen);
+    uint8_t *plain = (uint8_t *)malloc(clen ? clen : 1);
     if (!plain) return NULL;
 
     const uint8_t *nonce = pkg;
@@ -462,10 +468,27 @@ int zupt_hybrid_keygen(const char *keyfile) {
      * with 0600 atomically (via open) rather than fopen + chmod, which would
      * briefly expose the file with the umask-default mode. */
 #if !defined(_WIN32)
-    int fd = open(keyfile, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-    if (fd < 0) return -1;
+    int fd = open(keyfile, O_WRONLY | O_CREAT | O_NOFOLLOW | O_NONBLOCK, 0600);
+    if (fd < 0) {
+        zupt_secure_wipe(ml_sk, sizeof(ml_sk));
+        zupt_secure_wipe(x_sk, sizeof(x_sk));
+        return -1;
+    }
+    struct stat st;
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_nlink != 1 ||
+        st.st_uid != geteuid() || fchmod(fd, 0600) != 0 || ftruncate(fd, 0) != 0) {
+        close(fd);
+        zupt_secure_wipe(ml_sk, sizeof(ml_sk));
+        zupt_secure_wipe(x_sk, sizeof(x_sk));
+        return -1;
+    }
     FILE *f = fdopen(fd, "wb");
-    if (!f) { close(fd); return -1; }
+    if (!f) {
+        close(fd);
+        zupt_secure_wipe(ml_sk, sizeof(ml_sk));
+        zupt_secure_wipe(x_sk, sizeof(x_sk));
+        return -1;
+    }
 #else
     FILE *f = fopen(keyfile, "wb");
     if (!f) return -1;
@@ -489,14 +512,14 @@ int zupt_hybrid_keygen(const char *keyfile) {
     zupt_le64_put(buf + total, ck);
 
     size_t written = fwrite(buf, 1, total + 8, f);
-    fclose(f);
+    int closed = fclose(f);
 
     zupt_secure_wipe(ml_sk, sizeof(ml_sk));
     zupt_secure_wipe(x_sk, 32);
     zupt_secure_wipe(buf, total + 8);
     free(buf);
 
-    return (written == total + 8) ? 0 : -1;
+    return (written == total + 8 && closed == 0) ? 0 : -1;
 }
 
 int zupt_hybrid_export_pubkey(const char *privfile, const char *pubfile) {
