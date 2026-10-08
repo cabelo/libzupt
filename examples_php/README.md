@@ -65,7 +65,7 @@ Or run all examples at once:
 ./run_all.sh
 ```
 
-Since all examples begin with s shebang, if you are certain that FFI is enabled (check by running `php -i|grep -i FFI`), you can just:
+Since all examples begin with a shebang, if you are certain that FFI is enabled (check by running `php -i|grep -i FFI`), you can just:
 
 ```bash
 cd examples_php
