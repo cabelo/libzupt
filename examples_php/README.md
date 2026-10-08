@@ -5,8 +5,9 @@ This directory contains PHP examples equivalent to those in `examples_python`, u
 ## Requirements
 
 * Linux or macOS;
-* PHP 8.1 or later;
+* PHP 8.5 or later;
 * the `FFI` extension enabled;
+* [composer](https://getcomposer.org/) installed
 * a compiled or installed `libzupt.so`/`libzupt.dylib`;
 * C ABI symbols defined in `include/zupt_cxx.h`.
 
@@ -29,7 +30,7 @@ cmake --build build -j"$(nproc)"
 
 The wrapper searches for the library in the following order:
 
-1. the path passed to the `ZuptFFI` constructor;
+1. the path passed to the `Zupt` constructor;
 2. the `LIBZUPT_PATH` environment variable;
 3. `build/libzupt.so` in the project root directory;
 4. common system paths and library names available through the dynamic loader.
@@ -50,6 +51,7 @@ export LD_LIBRARY_PATH="$(dirname "$LIBZUPT_PATH"):${LD_LIBRARY_PATH:-}"
 
 ```bash
 cd examples_php
+composer update
 php -d ffi.enable=1 example_basic.php
 php -d ffi.enable=1 example_file.php
 php -d ffi.enable=1 example_keygen.php
@@ -61,6 +63,19 @@ Or run all examples at once:
 
 ```bash
 ./run_all.sh
+```
+
+Since all examples begin with s shebang, if you are certain that FFI is enabled (check by running `php -i|grep -i FFI`), you can just:
+
+```bash
+cd examples_php
+composer update
+chmod +x example*.php
+./example_basic.php
+./example_file.php
+./example_keygen.php
+./example_random.php
+./example_secure_buffer.php
 ```
 
 ## Examples
@@ -76,9 +91,11 @@ Or run all examples at once:
 
 ```php
 <?php
-require_once __DIR__ . '/Zupt.php';
+require __DIR__ . '/vendor/autoload.php';
 
-$zupt = new ZuptFFI();
+use Zupt\Zupt;
+
+$zupt = new Zupt();
 $keys = $zupt->generateKeyPair();
 
 $encrypted = $zupt->encrypt($keys['publicKey'], 'secret message');
@@ -102,9 +119,9 @@ The values below follow the current C ABI implementation:
 
 The ciphertext and encryption header contain binary data. Do not use text-processing functions that may alter their bytes or encoding.
 
-## `ZuptSecureBuffer` Security Considerations
+## `Zupt\SecureBuffer` Security Considerations
 
-`ZuptSecureBuffer` allocates native memory and overwrites it with zeros when `zeroize()` is called or when the object is destroyed. This reduces the lifetime of the contents stored in that specific buffer.
+`Zupt\ecureBuffer` allocates native memory and overwrites it with zeros when `zeroize()` is called or when the object is destroyed. This reduces the lifetime of the contents stored in that specific buffer.
 
 PHP may retain temporary copies in strings, logs, exceptions, or internal data structures. Therefore, this example does not provide an absolute guarantee that every trace of the information will be removed from the process memory.
 

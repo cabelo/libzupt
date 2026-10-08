@@ -1,13 +1,16 @@
 #!/usr/bin/env php
 <?php
 
-declare(strict_types=1);
-require_once __DIR__ . '/Zupt.php';
+declare(strict_types = 1);
+
+require_once __DIR__ . '/vendor/autoload.php';
+
+use Zupt\Zupt;
 
 $directory = sys_get_temp_dir() . '/libzupt_php_file_' . bin2hex(random_bytes(4));
 
 try {
-    $zupt = new ZuptFFI();
+    $zupt = new Zupt();
     if (!mkdir($directory, 0700, true) && !is_dir($directory)) {
         throw new RuntimeException("Não foi possível criar {$directory}");
     }
