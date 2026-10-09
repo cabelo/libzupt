@@ -1,11 +1,17 @@
 #!/usr/bin/env php
 <?php
 
-declare(strict_types=1);
-require_once __DIR__ . '/Zupt.php';
+declare(strict_types = 1);
+
+require_once __DIR__ . '/vendor/autoload.php';
+
+use Zupt\{
+    Zupt,
+    SecureBuffer,
+};
 
 try {
-    $zupt = new ZuptFFI();
+    $zupt = new Zupt();
 
     echo str_repeat('=', 60), PHP_EOL;
     echo "libzupt - Exemplo básico PHP/FFI", PHP_EOL;

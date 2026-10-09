@@ -1,13 +1,16 @@
 #!/usr/bin/env php
 <?php
 
-declare(strict_types=1);
-require_once __DIR__ . '/Zupt.php';
+declare(strict_types = 1);
+
+require_once __DIR__ . '/vendor/autoload.php';
+
+use Zupt\Zupt;
 
 $directory = sys_get_temp_dir() . '/libzupt_php_keys_' . bin2hex(random_bytes(4));
 
 try {
-    $zupt = new ZuptFFI();
+    $zupt = new Zupt();
     if (!mkdir($directory, 0700, true) && !is_dir($directory)) {
         throw new RuntimeException("Não foi possível criar {$directory}");
     }
@@ -52,12 +55,12 @@ try {
     echo "   Chave pública validada.", PHP_EOL, PHP_EOL;
 
     echo "6. Tamanhos da ABI:", PHP_EOL;
-    echo '   ML-KEM pública: ', ZuptFFI::MLKEM_PUBLIC_KEY_SIZE, " bytes", PHP_EOL;
-    echo '   ML-KEM privada: ', ZuptFFI::MLKEM_PRIVATE_KEY_SIZE, " bytes", PHP_EOL;
-    echo '   X25519: ', ZuptFFI::X25519_KEY_SIZE, " bytes", PHP_EOL;
-    echo '   Híbrida pública: ', ZuptFFI::HYBRID_PUBLIC_KEY_SIZE, " bytes", PHP_EOL;
-    echo '   Híbrida privada: ', ZuptFFI::HYBRID_PRIVATE_KEY_SIZE, " bytes", PHP_EOL;
-    echo '   Header: ', ZuptFFI::HYBRID_ENCRYPTION_HEADER_SIZE, " bytes", PHP_EOL;
+    echo '   ML-KEM pública: ', Zupt::MLKEM_PUBLIC_KEY_SIZE, " bytes", PHP_EOL;
+    echo '   ML-KEM privada: ', Zupt::MLKEM_PRIVATE_KEY_SIZE, " bytes", PHP_EOL;
+    echo '   X25519: ', Zupt::X25519_KEY_SIZE, " bytes", PHP_EOL;
+    echo '   Híbrida pública: ', Zupt::HYBRID_PUBLIC_KEY_SIZE, " bytes", PHP_EOL;
+    echo '   Híbrida privada: ', Zupt::HYBRID_PRIVATE_KEY_SIZE, " bytes", PHP_EOL;
+    echo '   Header: ', Zupt::HYBRID_ENCRYPTION_HEADER_SIZE, " bytes", PHP_EOL;
 
     echo PHP_EOL, str_repeat('=', 60), PHP_EOL;
     echo "Exemplo de chaves concluído!", PHP_EOL;

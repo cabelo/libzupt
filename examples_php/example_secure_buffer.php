@@ -1,11 +1,17 @@
 #!/usr/bin/env php
 <?php
 
-declare(strict_types=1);
-require_once __DIR__ . '/Zupt.php';
+declare(strict_types = 1);
+
+require_once __DIR__ . '/vendor/autoload.php';
+
+use Zupt\{
+    Zupt,
+    SecureBuffer,
+};
 
 try {
-    $zupt = new ZuptFFI();
+    $zupt = new Zupt();
 
     echo str_repeat('=', 60), PHP_EOL;
     echo "libzupt - SecureBuffer PHP/FFI", PHP_EOL;
@@ -13,13 +19,13 @@ try {
 
     echo "1. Criando SecureBuffer com conteúdo...", PHP_EOL;
     $secretText = 'My secret password123';
-    $secretBuffer = new ZuptSecureBuffer($secretText);
+    $secretBuffer = new SecureBuffer($secretText);
     unset($secretText);
     echo '   Tamanho: ', $secretBuffer->size(), " bytes", PHP_EOL;
     echo '   Conteúdo: ', $secretBuffer->toString(), PHP_EOL, PHP_EOL;
 
     echo "2. Criando SecureBuffer vazio de 64 bytes...", PHP_EOL;
-    $emptyBuffer = new ZuptSecureBuffer(64);
+    $emptyBuffer = new SecureBuffer(64);
     echo '   Tamanho: ', $emptyBuffer->size(), " bytes", PHP_EOL;
     echo '   Zerado: ', $emptyBuffer->isZeroized() ? 'sim' : 'não', PHP_EOL, PHP_EOL;
 

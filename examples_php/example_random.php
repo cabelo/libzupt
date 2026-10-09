@@ -1,11 +1,14 @@
 #!/usr/bin/env php
 <?php
 
-declare(strict_types=1);
-require_once __DIR__ . '/Zupt.php';
+declare(strict_types = 1);
+
+require_once __DIR__ . '/vendor/autoload.php';
+
+use Zupt\Zupt;
 
 try {
-    $zupt = new ZuptFFI();
+    $zupt = new Zupt();
 
     echo str_repeat('=', 60), PHP_EOL;
     echo "libzupt - Aleatoriedade e hashes PHP/FFI", PHP_EOL;
@@ -16,7 +19,7 @@ try {
     echo '   ', bin2hex($random), PHP_EOL, PHP_EOL;
 
     echo "2. Gerando nonce AES...", PHP_EOL;
-    $nonce = $zupt->randomBytes(ZuptFFI::AES_NONCE_SIZE);
+    $nonce = $zupt->randomBytes(Zupt::AES_NONCE_SIZE);
     echo '   ', bin2hex($nonce), PHP_EOL, PHP_EOL;
 
     $data = 'Hello, Post-Quantum World!';
