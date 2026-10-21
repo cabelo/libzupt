@@ -8,7 +8,7 @@ The **libzupt** is an SDK designed to simplify the implementation of encryption 
 
 The main goal of libzupt is to enable current applications to be protected against emerging threats from quantum computing, even when running on classical computers. By combining traditional cryptographic techniques with quantum-resistant mechanisms, the library provides an additional layer of security that anticipates future scenarios where classical algorithms may be broken. This allows developers to build more resilient systems, ensuring long-term data confidentiality and integrity.
 
-The name **zupt** pays homage to a project developed for performing backups using post-quantum cryptography, acknowledging its fundamental contribution to the conceptual and technical foundation of this solution. This inspiration reinforces the library’s commitment to innovation, security, and the evolution of the ideas that drive modern applied cryptography.
+The name **zupt** pays homage to a project developed for performing backups using post-quantum cryptography, Acknowledging its fundamental contribution to the conceptual and technical foundation of this solution. This inspiration reinforces the library’s commitment to innovation, security, and the evolution of the ideas that drive modern applied cryptography.
 
 <div align="center">
 <img width="480" height="487" alt="image" src="https://github.com/user-attachments/assets/df6a4a01-ca23-4b34-a5bf-d38a4c31d48c" /><br>
