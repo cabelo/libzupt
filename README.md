@@ -8,7 +8,7 @@ The **libzupt** is an SDK designed to simplify the implementation of encryption 
 
 The main goal of libzupt is to enable current applications to be protected against emerging threats from quantum computing, even when running on classical computers. By combining traditional cryptographic techniques with quantum-resistant mechanisms, the library provides an additional layer of security that anticipates future scenarios where classical algorithms may be broken. This allows developers to build more resilient systems, ensuring long-term data confidentiality and integrity.
 
-The name **zupt** is a tribute to the original project created by [**Cristian Cezar Moisés**](https://github.com/cristiancmoises), acknowledging his fundamental contribution to the conceptual and technical foundation of this solution. This inspiration reinforces the library’s commitment to innovation, security, and the evolution of ideas that drive modern applied cryptography forward.
+The name **zupt** pays homage to the original project—created by Cristian Cezar Moisés—which was built to perform backups using post-quantum cryptography, acknowledging his fundamental contribution to the conceptual and technical foundation of this solution. This inspiration reinforces the library’s commitment to innovation, security, and the evolution of the ideas that drive modern applied cryptography.
 
 <div align="center">
 <img width="480" height="487" alt="image" src="https://github.com/user-attachments/assets/df6a4a01-ca23-4b34-a5bf-d38a4c31d48c" /><br>
@@ -305,7 +305,11 @@ Alessandro de Oliveira Faria (A.K.A.CABELO)
 - Professor at FIA
 - Member i2Ai and ABRIA
 
-Contact: cabelo@opensuse.org
+### Relevant Contributors
+[**Cristian Cezar Moisés**](https://github.com/cristiancmoises), Creator of the zupt tool, the foundation of libzupt (thanks).
+[**Er Galvão Abbott **](https://github.com/galvao), Maintainer of the PHP examples
+
+Contact: alessandro.faria@owasp.org  or cabelo@opensuse.org
  
 ### References
 
