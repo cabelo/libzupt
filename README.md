@@ -25,6 +25,7 @@ The library provides:
 - **Modern C++ API**: Object-oriented interface with exception handling
 - **File and memory support**: Encryption for files and memory buffers
 - **Secure memory cleanup**: Sensitive data is wiped after use
+- **SDK** .NET, C++, Go, Java, NODEJS, Pythonm PHP andRust
 
 
 ### Requirements
