@@ -306,8 +306,8 @@ Alessandro de Oliveira Faria (A.K.A.CABELO)
 - Member i2Ai and ABRIA
 
 ### Relevant Contributors
-[**Cristian Cezar Moisés**](https://github.com/cristiancmoises), Creator of the zupt tool, the foundation of libzupt (thanks).
-[**Er Galvão Abbott **](https://github.com/galvao), Maintainer of the PHP examples
+ - [**Cristian Cezar Moisés**](https://github.com/cristiancmoises), Creator of the zupt tool, the foundation of libzupt (thanks).
+ - [**Er Galvão Abbott **](https://github.com/galvao), Maintainer of the PHP examples.
 
 Contact: alessandro.faria@owasp.org  or cabelo@opensuse.org
  
