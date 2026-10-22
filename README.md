@@ -4,7 +4,7 @@
 
 **libzupt** is a library that provides encryption and decryption of files and binary data in memory using post-quantum hybrid cryptography **ML-KEM-768 + X25519** in various languages.
 
-The **libzupt** is an SDK designed to simplify the implementation of encryption and decryption for files and in-memory binary data, using a modern approach based on hybrid post-quantum cryptography **ML-KEM-768 + X25519**. Initially developed in **C++, .NET, Go,Java, NodeJS,PHP and Python**, the library is built to be efficient, portable, and easy to integrate into applications that require advanced security. There are also plans to expand support to **other programming languages**, further increasing its adoption across different development ecosystems.
+The **libzupt** is an SDK designed to simplify the implementation of encryption and decryption for files and in-memory binary data, using a modern approach based on hybrid post-quantum cryptography **ML-KEM-768 + X25519**. Initially developed in **C++, .NET, Go, Java, NodeJS, Rust, PHP and Python**, the library is built to be efficient, portable, and easy to integrate into applications that require advanced security. There are also plans to expand support to **other programming languages**, further increasing its adoption across different development ecosystems.
 
 The main goal of libzupt is to enable current applications to be protected against emerging threats from quantum computing, even when running on classical computers. By combining traditional cryptographic techniques with quantum-resistant mechanisms, the library provides an additional layer of security that anticipates future scenarios where classical algorithms may be broken. This allows developers to build more resilient systems, ensuring long-term data confidentiality and integrity.
 
@@ -25,7 +25,7 @@ The library provides:
 - **Modern C++ API**: Object-oriented interface with exception handling
 - **File and memory support**: Encryption for files and memory buffers
 - **Secure memory cleanup**: Sensitive data is wiped after use
-- **SDK** .NET, C++, Go, Java, NODEJS, Pythonm PHP andRust
+- **SDK** .NET, C++, Go, Java, NODEJS, Python, PHP and Rust
 
 
 ### Requirements
