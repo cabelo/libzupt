@@ -5,7 +5,14 @@
  * SPDX-License-Identifier: MIT
  */
 
+/* Darwin hides O_NOFOLLOW in strict POSIX mode. Request its extensions before
+ * any system header so private-key writes keep rejecting symbolic links. */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE 1
+#endif
+#ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#endif
 #include "zupt_cxx.h"
 #include "zupt.h"
 #include "zupt_mlkem.h"
