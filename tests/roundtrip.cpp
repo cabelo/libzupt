@@ -164,7 +164,8 @@ void test_text_files_roundtrip() {
     std::vector<uint8_t> decrypted = decryptor.decryptFile(cipherFile, encHeader);
 
     // Read original
-    std::ifstream original(testFile);
+    // Compare on-disk bytes; text mode translates CRLF to LF on Windows.
+    std::ifstream original(testFile, std::ios::binary);
     std::string originalContent((std::istreambuf_iterator<char>(original)),
                                 std::istreambuf_iterator<char>());
 

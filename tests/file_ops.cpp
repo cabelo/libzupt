@@ -70,7 +70,8 @@ void test_file_decryption() {
     std::vector<uint8_t> decrypted = decryptor.decryptFile(cipherFile, encHeader);
 
     // Read original
-    std::ifstream orig(testFile);
+    // Compare on-disk bytes; text mode translates CRLF to LF on Windows.
+    std::ifstream orig(testFile, std::ios::binary);
     std::string origContent((std::istreambuf_iterator<char>(orig)),
                             std::istreambuf_iterator<char>());
 
@@ -220,7 +221,8 @@ void test_special_filenames() {
 
     std::vector<uint8_t> decrypted = decryptor.decryptFile(cipherFile, encHeader);
 
-    std::ifstream orig(testFile);
+    // Compare on-disk bytes; text mode translates CRLF to LF on Windows.
+    std::ifstream orig(testFile, std::ios::binary);
     std::string origContent((std::istreambuf_iterator<char>(orig)),
                             std::istreambuf_iterator<char>());
 

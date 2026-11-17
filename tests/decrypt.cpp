@@ -171,7 +171,8 @@ void test_file_decryption() {
     std::vector<uint8_t> decrypted = decryptor.decryptFile(cipherFile, encHeader);
 
     // Verify
-    std::ifstream expected(testFile);
+    // Compare on-disk bytes; text mode translates CRLF to LF on Windows.
+    std::ifstream expected(testFile, std::ios::binary);
     std::string expectedContent((std::istreambuf_iterator<char>(expected)),
                                 std::istreambuf_iterator<char>());
     std::string decryptedStr(decrypted.begin(), decrypted.end());
