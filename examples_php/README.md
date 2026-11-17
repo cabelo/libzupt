@@ -1,5 +1,11 @@
 # libzupt — PHP FFI Examples
 
+> **Native library v2:** rebuild this integration against libzupt 2.0.0. Generate
+> new v2 keys; old ciphertext requires [explicit migration](../docs/MIGRATION.md).
+> Use the library's `zupt_free()` for C allocations. Platform/binding coverage
+> is determined by actual CI runs, not by the presence of these examples.
+
+
 This directory contains PHP examples equivalent to those in `examples_python`, using the `libzupt` C ABI directly through the PHP FFI extension.
 
 ## Requirements
@@ -127,7 +133,7 @@ PHP may retain temporary copies in strings, logs, exceptions, or internal data s
 
 ## Windows Note
 
-The current ABI returns buffers allocated with `malloc()` and does not provide a public `zupt_free()` function. To avoid freeing memory through an incompatible C runtime, these examples prevent execution on Windows.
+The v2 ABI provides `zupt_free()` and the wrapper uses the native allocator for release. On Windows, supply the `zupt.dll` path explicitly and configure private-key directory ACLs. The configured binding CI is Linux; Windows PHP runtime validation remains separate.
 
 A recommended ABI improvement is to export:
 

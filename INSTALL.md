@@ -1,110 +1,39 @@
-# Installing libzupt
+# Build and install libzupt 2.0
 
-## Requirements
+The native library needs CMake 3.15+ and C11/C++17 compilers. Tests additionally
+need Python 3; portable C++ test paths use `std::filesystem` (GCC 9+ recommended).
+Python bindings are opt-in and require pybind11.
 
-- CMake 3.10 or higher
-- C++17 compiler (GCC 7+, Clang 5+, MSVC 2017+)
-- System libraries: `libm`
-
-## Method 1: Manual Compilation
-
-```bash
-
-# Clone libzupt
-git clone https://github.com/cabelo/libzupt.git
-
-# Build
-cd libzupt
-mkdir build && cd build
-cmake ..
-make -j$(nproc)
-
-# Install (optional)
-sudo make install
-
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLIBZUPT_BUILD_PYTHON=OFF
+cmake --build build --config Release --parallel 2
+ctest --test-dir build -C Release --output-on-failure
+cmake --install build --config Release --prefix "$PWD/install"
 ```
 
-## Method 2: Using the Build Script
+On Windows use the Visual Studio developer environment and `--config Release`.
+The tests copy the shared DLL beside native test executables. On POSIX, set
+`LD_LIBRARY_PATH` (Linux) or `DYLD_LIBRARY_PATH` (macOS) when a language runtime
+cannot locate a non-system installation.
 
-```bash
-cd libzupt
-chmod +x build.sh
-./build.sh
+```sh
+cmake -S tests/package -B consumer -DCMAKE_PREFIX_PATH="$PWD/install"
+cmake --build consumer --config Release --parallel 2
+ctest --test-dir consumer -C Release --output-on-failure
 ```
 
-## Method 3: Installation via vcpkg
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `LIBZUPT_BUILD_TESTS` | ON | Native and offline Python reference checks |
+| `LIBZUPT_BUILD_EXAMPLES` | ON | Examples and explicit v1 migration tool |
+| `LIBZUPT_BUILD_PYTHON` | OFF | Actual pybind11 extension |
+| `LIBZUPT_SANITIZERS` | OFF | GCC/Clang address and undefined-behavior instrumentation |
+| `LIBZUPT_BUILD_FUZZERS` | OFF | Clang libFuzzer; requires sanitizers |
 
-```bash
-vcpkg install libzupt:x64-linux
-# or
-vcpkg install libzupt:x64-windows
-```
+Use `-DLIBZUPT_BUILD_TESTS=OFF -DLIBZUPT_BUILD_EXAMPLES=OFF` for a minimal native
+installation. Shared/static CMake targets propagate include directories and
+C++17 requirements. The native core has no downloaded build dependencies.
+Bindings have separate toolchains and development dependencies.
 
-## Installation
-
-After construction, you? You can install the library:
-
-```bash
-sudo make install
-```
-
-Does this install?:
-
-- Libraries: `/usr/local/lib/libzupt.so` (or `.dylib` on macOS)
-- Headers: `/usr/local/include/zupt.hpp`
-
-- pkg-config files: `/usr/local/lib/pkgconfig/libzupt.pc`
-
-## Usage in CMake
-
-Add to your `CMakeLists.txt`:
-
-```cmake
-find_package(libzupt REQUIRED)
-
-add_executable(my_program main.cpp)
-target_link_libraries(my_program zupt::zupt_shared)
-
-```
-
-## Usage in GCC/Clang
-
-```bash
-g++ -std=c++17 my_program.cpp -o my_program \
--I/usr/local/include\
--L/usr/local/lib -lzupt
-```
-
-## Installation Verification
-
-Compile and run the basic example:
-
-```bash
-cd libzupt/build
-./zupt_example_basic
-```
-
-You? duty? see output like:
-
-```
-libzupt - Hybrid Post-Quantum Encryption Example
-Library version: 1.0.0
-
-Step 1: Generating hybrid key pair (ML-KEM-768 + X25519)...
-Public key size: 1224 bytes
-Secret key size: 2504 bytes
-Public key (first 16 bytes): [8a 3b ...]
-
-Step 2: Encrypting data in memory...
-Plaintext: Hello, Post-Quantum World! This is a secret message.
-Ciphertext size: 224 bytes
-Encryption header size: 1137 bytes
-
-Step 3: Decrypting data in memory...
-Decrypted: Hello, Post-Quantum World! This is a secret message.
-
-Step 4: Verifying decryption...
-SUCCESS: Decrypted text matches original!
-
-All examples completed successfully!
-```
+Format v2 requires new keys. See [MIGRATION.md](docs/MIGRATION.md) before
+upgrading any application that stores v1 keys or ciphertext.

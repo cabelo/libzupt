@@ -6,6 +6,7 @@
  */
 
 #include "zupt.hpp"
+#include "test_paths.hpp"
 #include <iostream>
 #include <fstream>
 #include <cassert>
@@ -17,7 +18,7 @@ void test_file_encryption() {
     zupt::Encryptor encryptor(keypair.public_key);
 
     // Create test file
-    std::string testFile = "/tmp/file_enc_test.txt";
+    std::string testFile = testPath("file_enc_test.txt");
     std::ofstream tf(testFile);
     tf << "Test content for file encryption\n";
     tf << "Multiple lines of data\n";
@@ -49,7 +50,7 @@ void test_file_decryption() {
     zupt::Decryptor decryptor(keypair.secret_key);
 
     // Create test file
-    std::string testFile = "/tmp/file_dec_test.txt";
+    std::string testFile = testPath("file_dec_test.txt");
     std::ofstream tf(testFile);
     tf << "Content for file decryption test\n";
     tf << "Line 2\n";
@@ -60,7 +61,7 @@ void test_file_decryption() {
     auto [ciphertext, encHeader] = encryptor.encryptFile(testFile);
 
     // Save ciphertext to file for decryption
-    std::string cipherFile = "/tmp/file_dec_test.txt.cipher";
+    std::string cipherFile = testPath("file_dec_test.txt.cipher");
     std::ofstream cf(cipherFile, std::ios::binary);
     cf.write(reinterpret_cast<const char*>(ciphertext.data()), ciphertext.size());
     cf.close();
@@ -90,7 +91,7 @@ void test_binary_file_roundtrip() {
     zupt::Decryptor decryptor(keypair.secret_key);
 
     // Create binary file with various byte values
-    std::string testFile = "/tmp/binary_test.bin";
+    std::string testFile = testPath("binary_test.bin");
     std::ofstream tf(testFile, std::ios::binary);
     for (int i = 0; i < 256; i++) {
         tf << static_cast<char>(i);
@@ -101,7 +102,7 @@ void test_binary_file_roundtrip() {
     auto [ciphertext, encHeader] = encryptor.encryptFile(testFile);
 
     // Save ciphertext to file for decryption
-    std::string cipherFile = "/tmp/binary_test.bin.cipher";
+    std::string cipherFile = testPath("binary_test.bin.cipher");
     std::ofstream cf(cipherFile, std::ios::binary);
     cf.write(reinterpret_cast<const char*>(ciphertext.data()), ciphertext.size());
     cf.close();
@@ -131,7 +132,7 @@ void test_large_file() {
     zupt::Decryptor decryptor(keypair.secret_key);
 
     // Create 2MB binary file
-    std::string testFile = "/tmp/large_file_test.bin";
+    std::string testFile = testPath("large_file_test.bin");
     std::ofstream tf(testFile, std::ios::binary);
     for (int i = 0; i < 2048 * 1024; i++) {
         tf << static_cast<char>(i & 0xFF);
@@ -143,7 +144,7 @@ void test_large_file() {
     std::cout << "  Encrypted size: " << ciphertext.size() / 1024 << " KB" << std::endl;
 
     // Save ciphertext to file for decryption
-    std::string cipherFile = "/tmp/large_file_test.bin.cipher";
+    std::string cipherFile = testPath("large_file_test.bin.cipher");
     std::ofstream cf(cipherFile, std::ios::binary);
     cf.write(reinterpret_cast<const char*>(ciphertext.data()), ciphertext.size());
     cf.close();
@@ -173,7 +174,7 @@ void test_empty_file() {
     zupt::Decryptor decryptor(keypair.secret_key);
 
     // Create empty file
-    std::string testFile = "/tmp/empty_file_test.txt";
+    std::string testFile = testPath("empty_file_test.txt");
     std::ofstream tf(testFile);
     tf.close();
 
@@ -181,7 +182,7 @@ void test_empty_file() {
     auto [ciphertext, encHeader] = encryptor.encryptFile(testFile);
 
     // Save ciphertext to file for decryption
-    std::string cipherFile = "/tmp/empty_file_test.txt.cipher";
+    std::string cipherFile = testPath("empty_file_test.txt.cipher");
     std::ofstream cf(cipherFile, std::ios::binary);
     cf.write(reinterpret_cast<const char*>(ciphertext.data()), ciphertext.size());
     cf.close();
@@ -204,7 +205,7 @@ void test_special_filenames() {
     zupt::Decryptor decryptor(keypair.secret_key);
 
     // Test with path separator in filename
-    std::string testFile = "/tmp/special_test_file.txt";
+    std::string testFile = testPath("special_test_file.txt");
     std::ofstream tf(testFile);
     tf << "Special filename test\n";
     tf.close();
@@ -212,7 +213,7 @@ void test_special_filenames() {
     auto [ciphertext, encHeader] = encryptor.encryptFile(testFile);
 
     // Save ciphertext to file for decryption
-    std::string cipherFile = "/tmp/special_test_file.txt.cipher";
+    std::string cipherFile = testPath("special_test_file.txt.cipher");
     std::ofstream cf(cipherFile, std::ios::binary);
     cf.write(reinterpret_cast<const char*>(ciphertext.data()), ciphertext.size());
     cf.close();

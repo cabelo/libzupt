@@ -30,24 +30,8 @@ PYBIND11_MODULE(zupt, m) {
         .value("ERR_AUTH_FAIL", zupt::ErrorCode::ERR_AUTH_FAIL)
         .export_values();
 
-    // ZuptError exception - create a simple Python exception class
-    // Since we can't capture in register_exception_translator, we'll use RuntimeError
-    // for all exceptions and provide a code() method on the exception object
-    py::class_<zupt::ZuptError>(m, "ZuptError")
-        .def(py::init<const zupt::ErrorCode, const std::string&>(), py::arg("code"), py::arg("msg") = "")
-        .def("code", &zupt::ZuptError::code);
-
-    // Register exception translator - simple RuntimeError for all exceptions
-    // This allows catching RuntimeError in Python
-    py::register_exception_translator([](std::exception_ptr p) {
-        try {
-            if (p) std::rethrow_exception(p);
-        } catch (const zupt::ZuptError& e) {
-            PyErr_SetString(PyExc_RuntimeError, e.what());
-        } catch (const std::exception& e) {
-            PyErr_SetString(PyExc_RuntimeError, e.what());
-        }
-    });
+    // A real Python exception type, also catchable as RuntimeError.
+    py::register_exception<zupt::ZuptError>(m, "ZuptError", PyExc_RuntimeError);
 
     // Constants
     m.attr("MLKEM_PUBLICKEYBYTES") = zupt::MLKEM_PUBLICKEYBYTES;

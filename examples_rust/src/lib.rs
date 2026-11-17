@@ -132,6 +132,14 @@ pub fn export_public_key(priv_key: &[u8], pub_key: &mut [u8]) -> Result<(), Zupt
     Ok(())
 }
 
+// The native library owns its allocator. Copy into a Rust allocation before
+// releasing the original; Vec::from_raw_parts is invalid for a C malloc buffer.
+unsafe fn take_native_buffer(ptr: *mut u8, len: usize) -> Vec<u8> {
+    let result = std::slice::from_raw_parts(ptr, len).to_vec();
+    bindings::zupt_free(ptr.cast());
+    result
+}
+
 pub fn encrypt(pub_key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), ZuptError> {
     let mut enc_header = vec![0u8; HYBRID_ENC_HEADER_SIZE];
     let mut enc_header_len = enc_header.len();
@@ -153,7 +161,7 @@ pub fn encrypt(pub_key: &[u8], plaintext: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Z
         return Err(ZuptError::from_str("Encryption failed"));
     }
 
-    let ct = unsafe { Vec::from_raw_parts(ciphertext, ciphertext_len, ciphertext_len) };
+    let ct = unsafe { take_native_buffer(ciphertext, ciphertext_len) };
     enc_header.truncate(enc_header_len);
     Ok((ct, enc_header))
 }
@@ -177,7 +185,7 @@ pub fn decrypt(priv_key: &[u8], ciphertext: &[u8], enc_header: &[u8]) -> Result<
         return Err(ZuptError::from_str("Decryption failed (wrong key or corrupted data)"));
     }
 
-    Ok(unsafe { Vec::from_raw_parts(plaintext, plaintext_len, plaintext_len) })
+    Ok(unsafe { take_native_buffer(plaintext, plaintext_len) })
 }
 
 pub fn encrypt_file(pub_key: &[u8], path: &str) -> Result<(Vec<u8>, Vec<u8>), ZuptError> {
@@ -188,7 +196,7 @@ pub fn encrypt_file(pub_key: &[u8], path: &str) -> Result<(Vec<u8>, Vec<u8>), Zu
     if data.is_null() {
         return Err(ZuptError::from_str("Failed to read file"));
     }
-    let plaintext = unsafe { Vec::from_raw_parts(data, size, size) };
+    let plaintext = unsafe { take_native_buffer(data, size) };
     encrypt(pub_key, &plaintext)
 }
 
@@ -200,7 +208,7 @@ pub fn decrypt_file(priv_key: &[u8], path: &str, enc_header: &[u8]) -> Result<Ve
     if data.is_null() {
         return Err(ZuptError::from_str("Failed to read file"));
     }
-    let ciphertext = unsafe { Vec::from_raw_parts(data, size, size) };
+    let ciphertext = unsafe { take_native_buffer(data, size) };
     decrypt(priv_key, &ciphertext, enc_header)
 }
 
@@ -242,7 +250,7 @@ pub fn save_keypair(kp: &KeyPair, path: &str) -> Result<(), ZuptError> {
     let c_path = std::ffi::CString::new(path)
         .map_err(|_| ZuptError::from_str("Invalid file path"))?;
     let ret = unsafe {
-        bindings::zupt_write_file(c_path.as_ptr(), kp.secret_key.as_ptr(), kp.secret_key.len())
+        bindings::zupt_write_private_key(c_path.as_ptr(), kp.secret_key.as_ptr(), kp.secret_key.len())
     };
     if ret != 0 {
         return Err(ZuptError::from_str("Failed to save key pair"));
@@ -258,7 +266,7 @@ pub fn load_keypair(path: &str) -> Result<KeyPair, ZuptError> {
     if data.is_null() {
         return Err(ZuptError::from_str("Failed to read key file"));
     }
-    let file_data = unsafe { Vec::from_raw_parts(data, size, size) };
+    let file_data = unsafe { take_native_buffer(data, size) };
 
     if size < HYBRID_PRIV_KEY_SIZE {
         return Err(ZuptError::from_str("Key file too small"));
@@ -281,7 +289,7 @@ pub fn load_public_key(path: &str) -> Result<Vec<u8>, ZuptError> {
     if data.is_null() {
         return Err(ZuptError::from_str("Failed to read key file"));
     }
-    let file_data = unsafe { Vec::from_raw_parts(data, size, size) };
+    let file_data = unsafe { take_native_buffer(data, size) };
 
     if file_data.len() < HYBRID_PUB_KEY_SIZE {
         return Err(ZuptError::from_str("Key file too small for public key"));
@@ -312,5 +320,5 @@ pub fn read_file(path: &str) -> Result<Vec<u8>, ZuptError> {
     if data.is_null() {
         return Err(ZuptError::from_str("Failed to read file"));
     }
-    Ok(unsafe { Vec::from_raw_parts(data, size, size) })
+    Ok(unsafe { take_native_buffer(data, size) })
 }

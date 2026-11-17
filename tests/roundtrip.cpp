@@ -6,6 +6,7 @@
  */
 
 #include "zupt.hpp"
+#include "test_paths.hpp"
 #include <iostream>
 #include <fstream>
 #include <cassert>
@@ -141,7 +142,7 @@ void test_text_files_roundtrip() {
     zupt::Decryptor decryptor(keypair.secret_key);
 
     // Create test file with various content
-    std::string testFile = "/tmp/roundtrip_test.txt";
+    std::string testFile = testPath("roundtrip_test.txt");
     std::ofstream tf(testFile);
     tf << "This is a text file for roundtrip testing.\n";
     tf << "It contains multiple lines.\n";
@@ -154,7 +155,7 @@ void test_text_files_roundtrip() {
     auto [ciphertext, encHeader] = encryptor.encryptFile(testFile);
 
     // Save ciphertext to file for decryption
-    std::string cipherFile = "/tmp/roundtrip_test.txt.cipher";
+    std::string cipherFile = testPath("roundtrip_test.txt.cipher");
     std::ofstream cf(cipherFile, std::ios::binary);
     cf.write(reinterpret_cast<const char*>(ciphertext.data()), ciphertext.size());
     cf.close();

@@ -1,5 +1,27 @@
 # Histórico de Alterações do libzupt
 
+## v2.0.0 (release candidate)
+
+- Align ML-KEM-768 matrix orientation, success-secret derivation, implicit
+  rejection and key checks with final FIPS 203; add 105 pinned ACVP checks.
+- Add v2 key framing and a complete-message envelope MAC that authenticates
+  the header, total length and all records, detecting full-block truncation.
+- Keep v1 recovery explicit, require an independently trusted plaintext SHA-256,
+  and provide a no-plaintext-temporary-file migration tool. Generate fresh v2 keys.
+- Replace secret-indexed portable AES S-box lookups with algebraic operations;
+  add runtime AES-NI dispatch and force-portable AES known-answer tests.
+- Add a native `zupt_free` ABI for allocator-safe FFI ownership. Copy C allocations
+  into Rust-owned buffers before releasing them in the native runtime.
+- Replace POSIX-only paths in portable tests, extend CI targets, add sanitizer,
+  mutation, cross-implementation, fuzzing and reproducibility verification.
+- Add source SPDX inventories, maintainer checksum signing instructions,
+  benchmark tooling and versioned security/format/migration documentation.
+
+Compatibility: key version 2, encryption discriminator 0x03 and ZUP2 envelopes
+are incompatible with v1. No automatic fallback or key relabeling is performed.
+Native KATs are implementation evidence, not certification or independent audit.
+
+
 ## v1.0.14 (2026-09-24)
 
 - Authenticate empty messages and reject missing ciphertext, forged zero-length

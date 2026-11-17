@@ -60,7 +60,7 @@
 
 /* Encryption types (stored in encryption header block) */
 #define ZUPT_ENC_PBKDF2     0x01  /* Password-based: PBKDF2 → AES-256-CTR + HMAC */
-#define ZUPT_ENC_PQ_HYBRID  0x02  /* ML-KEM-768 + X25519 hybrid KEM */
+#define ZUPT_ENC_PQ_HYBRID  0x03  /* ML-KEM-768 + X25519 hybrid KEM */
 
 /* Block types */
 #define ZUPT_BLOCK_DATA       0x00

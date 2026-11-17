@@ -1,5 +1,11 @@
 # libzupt Node.js Examples
 
+> **Native library v2:** rebuild this integration against libzupt 2.0.0. Generate
+> new v2 keys; old ciphertext requires [explicit migration](../docs/MIGRATION.md).
+> Use the library's `zupt_free()` for C allocations. Platform/binding coverage
+> is determined by actual CI runs, not by the presence of these examples.
+
+
 Este diretório contém exemplos de uso da biblioteca **libzupt** em Node.js.
 
 A libzupt é uma biblioteca de criptografia híbrida pós-quanto (ML-KEM-768 + X25519) para compactação e criptografia de arquivos.
@@ -181,7 +187,7 @@ As chaves são armazenadas no formato `.zupt-key`:
 
 ```
 [4B]  "ZKEY" - Número mágico
-[1B]  Versão (0x01)
+[1B]  Versão (0x02)
 [1B]  Flags (bit 0 = 1 se tem chave privada)
 [2B]  Reservado
 [1184B] Chave Pública ML-KEM-768

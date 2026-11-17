@@ -57,7 +57,15 @@ func (g *KeyGenerator) GenerateKeyPair() (*KeyPair, error) {
 }
 
 func (g *KeyGenerator) SaveKeyPair(kp *KeyPair, filename string) error {
-	return WriteFile(filename, kp.SecretKey)
+	if kp == nil || len(kp.SecretKey) != HybridPrivKeySize {
+		return errors.New("invalid private key size")
+	}
+	path := C.CString(filename)
+	defer C.free(unsafe.Pointer(path))
+	if C.zupt_write_private_key(path, (*C.uint8_t)(unsafe.Pointer(&kp.SecretKey[0])), C.size_t(len(kp.SecretKey))) != 0 {
+		return errors.New("cannot securely write private key")
+	}
+	return nil
 }
 
 func (g *KeyGenerator) LoadKeyPair(filename string) (*KeyPair, error) {
@@ -152,7 +160,7 @@ func (e *Encryptor) Encrypt(data []byte) ([]byte, []byte, error) {
 	if ctPtr == nil {
 		return nil, nil, errors.New("encryption failed")
 	}
-	defer C.free(unsafe.Pointer(ctPtr))
+	defer C.zupt_free(unsafe.Pointer(ctPtr))
 	ciphertext := C.GoBytes(unsafe.Pointer(ctPtr), C.int(ctLen))
 	return ciphertext, encHeader[:int(hdrLen)], nil
 }
@@ -204,7 +212,7 @@ func (d *Decryptor) Decrypt(ciphertext, encHeader []byte) ([]byte, error) {
 	if ptPtr == nil {
 		return nil, errors.New("decryption failed (wrong key or corrupted data)")
 	}
-	defer C.free(unsafe.Pointer(ptPtr))
+	defer C.zupt_free(unsafe.Pointer(ptPtr))
 	return C.GoBytes(unsafe.Pointer(ptPtr), C.int(ptLen)), nil
 }
 
@@ -309,7 +317,7 @@ func ReadFile(path string) ([]byte, error) {
 	if data == nil {
 		return nil, errors.New("failed to read file: " + path)
 	}
-	defer C.free(unsafe.Pointer(data))
+	defer C.zupt_free(unsafe.Pointer(data))
 	return C.GoBytes(unsafe.Pointer(data), C.int(size)), nil
 }
 

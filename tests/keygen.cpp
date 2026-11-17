@@ -6,6 +6,7 @@
  */
 
 #include "zupt.hpp"
+#include "test_paths.hpp"
 #include <iostream>
 #include <fstream>
 #include <cassert>
@@ -26,8 +27,8 @@ void test_key_generation() {
     assert(memcmp(keypair.secret_key.data(), "ZKEY", 4) == 0);
 
     // Verify version byte
-    assert(keypair.public_key[4] == 0x01);
-    assert(keypair.secret_key[4] == 0x01);
+    assert(keypair.public_key[4] == ZUPT_KEY_FORMAT_VERSION);
+    assert(keypair.secret_key[4] == ZUPT_KEY_FORMAT_VERSION);
 
     // Verify private key flag
     assert((keypair.secret_key[5] & 0x01) == 0x01);
@@ -44,7 +45,7 @@ void test_key_file_io() {
     zupt::KeyPair keypair = keygen.generateKeyPair();
 
     // Save to file
-    std::string tmpfile = "/tmp/test_keypair.key";
+    std::string tmpfile = testPath("test_keypair.key");
     keygen.saveKeyPair(keypair, tmpfile);
 
     // Load from file
@@ -66,8 +67,8 @@ void test_public_key_export() {
     zupt::KeyGenerator keygen;
     zupt::KeyPair keypair = keygen.generateKeyPair();
 
-    std::string privfile = "/tmp/test_priv.key";
-    std::string pubfile = "/tmp/test_pub.key";
+    std::string privfile = testPath("test_priv.key");
+    std::string pubfile = testPath("test_pub.key");
 
     keygen.saveKeyPair(keypair, privfile);
     keygen.exportPublicKey(privfile, pubfile);
@@ -95,8 +96,8 @@ void test_keypair_roundtrip() {
     for (int i = 0; i < 3; i++) {
         zupt::KeyPair kp = keygen.generateKeyPair();
 
-        std::string privfile = "/tmp/roundtrip_priv_" + std::to_string(i) + ".key";
-        std::string pubfile = "/tmp/roundtrip_pub_" + std::to_string(i) + ".key";
+        std::string privfile = testPath("roundtrip_priv_") + std::to_string(i) + ".key";
+        std::string pubfile = testPath("roundtrip_pub_") + std::to_string(i) + ".key";
 
         keygen.saveKeyPair(kp, privfile);
         keygen.exportPublicKey(privfile, pubfile);

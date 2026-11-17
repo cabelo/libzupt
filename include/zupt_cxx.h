@@ -11,6 +11,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+/* Application framing versions, distinct from the ML-KEM parameter set. */
+#define ZUPT_KEY_FORMAT_VERSION 2
+#define ZUPT_ENVELOPE_FORMAT 3
+
 #if defined(_WIN32) || defined(__CYGWIN__)
   #ifdef ZUPT_STATIC
     #define ZUPT_API
@@ -30,6 +34,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/* Release allocations returned by the C API in the same runtime that made
+ * them. Required across Windows CRT/FFI boundaries. */
+ZUPT_API void zupt_free(void* ptr);
 
 /* KEY GENERATION C API */
 
@@ -59,6 +67,10 @@ ZUPT_API uint8_t* zupt_read_file(const char* path, size_t* size);
  * Returns 0 on success, -1 on error
  */
 ZUPT_API int zupt_write_file(const char* path, const uint8_t* data, size_t size);
+
+/* API-format private keys only. POSIX: checked owner, regular single-link file,
+ * O_NOFOLLOW, mode 0600 before writing. Windows: caller controls directory ACLs. */
+ZUPT_API int zupt_write_private_key(const char* path, const uint8_t* data, size_t size);
 
 /* ENCRYPTION/DECRYPTION C API */
 
@@ -91,6 +103,15 @@ ZUPT_API uint8_t* zupt_hybrid_decrypt(const uint8_t* priv_key, size_t priv_key_l
                                       const uint8_t* ciphertext, size_t ciphertext_len,
                                       const uint8_t* enc_header, size_t enc_header_len,
                                       size_t* plaintext_len);
+
+/* Explicit v1 recovery only. expected_sha256 must come from a trusted source:
+ * the legacy format cannot authenticate removal of complete final blocks.
+ * New keys/envelopes are never interpreted as legacy. Returns NULL on error. */
+ZUPT_API uint8_t* zupt_hybrid_decrypt_legacy(
+    const uint8_t* priv_key, size_t priv_key_len,
+    const uint8_t* ciphertext, size_t ciphertext_len,
+    const uint8_t* enc_header, size_t enc_header_len,
+    const uint8_t expected_sha256[32], size_t* plaintext_len);
 
 #ifdef __cplusplus
 }

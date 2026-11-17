@@ -1,0 +1,68 @@
+name: Linux language integrations
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bindings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, go, rust, java, node, dotnet, php]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with: {persist-credentials: false}
+      - name: Native build and install
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLIBZUPT_BUILD_PYTHON=OFF
+          cmake --build build --parallel 2
+          cmake --install build --prefix "$RUNNER_TEMP/install"
+          echo "LD_LIBRARY_PATH=$PWD/build" >> "$GITHUB_ENV"
+          echo "CMAKE_PREFIX_PATH=$RUNNER_TEMP/install" >> "$GITHUB_ENV"
+      - name: Python binding
+        if: matrix.language == 'python'
+        run: |
+          python3 -m pip install pybind11==3.1.0
+          cmake -S . -B build -DLIBZUPT_BUILD_PYTHON=ON -Dpybind11_DIR="$(python3 -m pybind11 --cmakedir)"
+          cmake --build build --parallel 2
+          PYTHONPATH="$PWD/build/examples_python" python3 examples_python/example_basic.py
+      - name: Go binding
+        if: matrix.language == 'go'
+        working-directory: examples_go
+        run: go run . basic
+      - name: Rust binding
+        if: matrix.language == 'rust'
+        working-directory: examples_rust
+        run: |
+          cargo run --locked --example example_basic
+      - name: Java binding
+        if: matrix.language == 'java'
+        run: |
+          cmake -S examples_java -B build-java -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-java --parallel 2
+          mkdir -p build-java/classes
+          javac -d build-java/classes examples_java/src/com/libzupt/*.java
+          java -Djava.library.path="$PWD/build-java" -cp build-java/classes com.libzupt.ExampleBasic
+      - name: Node.js binding
+        if: matrix.language == 'node'
+        working-directory: examples_nodejs
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+          npm test
+      - name: .NET binding
+        if: matrix.language == 'dotnet'
+        working-directory: examples_dotnet
+        run: dotnet run --project ZuptExample.csproj
+      - name: PHP binding
+        if: matrix.language == 'php'
+        working-directory: examples_php
+        run: |
+          composer dump-autoload --no-interaction
+          php -d ffi.enable=1 example_basic.php

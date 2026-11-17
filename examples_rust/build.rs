@@ -15,8 +15,6 @@ fn main() {
         .header(include_dir.join("zupt.h").to_str().unwrap())
         .header(include_dir.join("zupt_keccak.h").to_str().unwrap())
         .clang_arg(format!("-I{}", include_dir.display()))
-        .clang_arg("-isystem")
-        .clang_arg("/usr/lib64/clang/19/include")
         .allowlist_function("zupt_.*")
         .allowlist_type("zupt_.*")
         .allowlist_var("ZUPT_.*")
@@ -34,7 +32,9 @@ fn main() {
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
 
-    let build_dir = zupt_dir.join("build");
+    let build_dir = env::var_os("LIBZUPT_LIBRARY_DIR")
+        .map(PathBuf::from).unwrap_or_else(|| zupt_dir.join("build"));
+    println!("cargo:rerun-if-env-changed=LIBZUPT_LIBRARY_DIR");
     println!("cargo:rustc-link-search=native={}", build_dir.display());
 
     if build_dir.join("libzupt.so").exists() || build_dir.join("libzupt.so.1").exists() {

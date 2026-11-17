@@ -8,7 +8,7 @@
 
         "src/zupt_crypto_cpp_bridge.cpp",
 
-        "../src/zupt_crypto.c",
+        "src/zupt_crypto_c_bridge.c",
         "../src/zupt_cxx.c",
         "../src/zupt_mlkem.c",
         "../src/zupt_x25519.c",

@@ -36,7 +36,7 @@ int main() {
     zupt::Encryptor encryptor(keys.public_key);
     zupt::Decryptor decryptor(keys.secret_key);
     auto [empty, emptyHeader] = encryptor.encryptMemory(nullptr, 0);
-    check(empty.size() == 52, "empty plaintext must carry an authenticated record");
+    check(empty.size() == 96, "empty plaintext must carry a complete authenticated envelope");
     check(decryptor.decryptMemory(empty, emptyHeader).empty(), "empty roundtrip");
     rejects(decryptor, keys, {}, emptyHeader, "reject missing ciphertext");
     if (!empty.empty()) {
@@ -50,11 +50,12 @@ int main() {
     auto [ciphertext, header] = encryptor.encryptMemory(input);
     check(decryptor.decryptMemory(ciphertext, header) == input, "two-block roundtrip");
     auto changed = ciphertext;
-    std::rotate(changed.begin(), changed.begin() + blockSize + 52, changed.end());
+    std::rotate(changed.begin() + 12, changed.begin() + 12 + blockSize + 52,
+                changed.end() - 32);
     rejects(decryptor, keys, changed, header, "reject reordered blocks");
     changed = ciphertext;
-    std::copy(ciphertext.begin(), ciphertext.begin() + blockSize + 52,
-              changed.begin() + blockSize + 52);
+    std::copy(ciphertext.begin() + 12, ciphertext.begin() + 12 + blockSize + 52,
+              changed.begin() + 12 + blockSize + 52);
     rejects(decryptor, keys, changed, header, "reject replayed block");
     changed = ciphertext;
     changed.resize(changed.size() + 52, 0);
@@ -62,6 +63,15 @@ int main() {
     changed = ciphertext;
     changed.pop_back();
     rejects(decryptor, keys, changed, header, "reject truncated block");
+    changed = ciphertext;
+    changed.erase(changed.begin() + 12 + blockSize + 52, changed.end() - 32);
+    rejects(decryptor, keys, changed, header, "reject removal of a complete final block");
+    changed = ciphertext;
+    changed.erase(changed.end() - 32, changed.end());
+    rejects(decryptor, keys, changed, header, "reject missing final envelope MAC");
+    changed = ciphertext;
+    changed[4] ^= 1;
+    rejects(decryptor, keys, changed, header, "authenticate total plaintext length");
     changed = ciphertext;
     std::fill(changed.begin(), changed.begin() + 4, 0xff);
     rejects(decryptor, keys, changed, header, "reject overflowing record length");
@@ -72,5 +82,7 @@ int main() {
     rejects(decryptor, keys, changed, header, "reject payload beyond block limit");
     header.back() ^= 1;
     rejects(decryptor, keys, ciphertext, header, "authenticate header nonce");
+    header[0] = 2;
+    rejects(decryptor, keys, ciphertext, header, "never downgrade to legacy decryption");
     return failures ? 1 : 0;
 }

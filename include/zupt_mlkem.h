@@ -35,6 +35,11 @@
 #define MLKEM_CIPHERTEXTBYTES   1088
 #define MLKEM_SSBYTES           32
 
+/* FIPS 203 public-key modulus check and secret-key hash check.
+ * Return 0 for a valid encoding, -1 for an invalid key. */
+int zupt_mlkem768_public_key_check(const uint8_t pk[1184]);
+int zupt_mlkem768_secret_key_check(const uint8_t sk[2400]);
+
 /* KeyGen: generate public/secret keypair.
  * pk: output public key (1184 bytes)
  * sk: output secret key (2400 bytes)

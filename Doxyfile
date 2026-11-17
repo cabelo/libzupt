@@ -1,0 +1,9 @@
+PROJECT_NAME = libzupt
+PROJECT_NUMBER = 2.0.0
+OUTPUT_DIRECTORY = ../libzupt-apidocs
+INPUT = include/zupt.hpp include/zupt_cxx.h
+EXTRACT_ALL = YES
+GENERATE_HTML = YES
+GENERATE_LATEX = NO
+QUIET = YES
+WARN_IF_UNDOCUMENTED = NO

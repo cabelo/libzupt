@@ -8,6 +8,8 @@ import re
 import shutil
 import subprocess
 import tempfile
+import sys
+import tarfile
 
 
 def run(*args, **kwargs):
@@ -16,7 +18,7 @@ def run(*args, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("tag", help="signed release tag, for example v1.0.14")
+    parser.add_argument("tag", help="signed release tag, for example v2.0.0")
     parser.add_argument("output", type=Path, help="new directory outside the checkout")
     args = parser.parse_args()
     if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", args.tag):
@@ -67,12 +69,21 @@ def main():
                 (restored / source.name).read_bytes()).digest():
             raise RuntimeError("archive roundtrip differs from the tagged source")
         shutil.copyfile(archive, output / archive.name)
+    # Inventory exactly the signed-tag source, rather than the working tree.
+    with tempfile.TemporaryDirectory(prefix="libzupt-sbom-") as directory:
+        exported = Path(directory)
+        with tarfile.open(output / f"{stem}.tar.gz", "r:gz") as archive:
+            archive.extractall(exported, filter="data")
+        tagged_root = exported / f"libzupt-{version}"
+        run(sys.executable, str(root / "scripts/generate-sbom.py"),
+            "--root", str(tagged_root), "--output", str(output / "source.spdx.json"))
     with (output / "SHA256SUMS").open("w", encoding="ascii") as checksums:
-        for suffix in (".tar.gz", ".zupt"):
-            artifact = output / (stem + suffix)
+        for name in (stem + ".tar.gz", stem + ".zupt", "source.spdx.json", "release-notes.txt"):
+            artifact = output / name
             digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
             checksums.write(f"{digest}  {artifact.name}\n")
             print(f"{artifact.name}: {artifact.stat().st_size} bytes; SHA-256 {digest}")
+    print("Sign SHA256SUMS with scripts/sign-release.sh and your maintainer fingerprint.")
     print(f"Verified source packages for {args.tag}: {output}")
 
 
