@@ -8,6 +8,22 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(LIBZUPT_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(LIBZUPT_BUILD_FUZZERS "Build Clang libFuzzer harness" OFF)
+if(LIBZUPT_SANITIZERS)
+    if(MSVC)
+        message(FATAL_ERROR "This sanitizer configuration requires GCC or Clang")
+    endif()
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+if(LIBZUPT_BUILD_FUZZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR NOT LIBZUPT_SANITIZERS)
+        message(FATAL_ERROR "Fuzzing requires Clang and LIBZUPT_SANITIZERS=ON")
+    endif()
+    add_compile_options(-fsanitize=fuzzer-no-link)
+endif()
+
 # Position independent code for shared library
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -62,7 +78,8 @@ endif()
 
 set_target_properties(zupt_shared PROPERTIES
     VERSION ${PROJECT_VERSION}
-    SOVERSION 1
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
     OUTPUT_NAME zupt
     LINKER_LANGUAGE CXX
 )
@@ -162,15 +179,10 @@ install(FILES
 # BUILD OPTIONS
 # ========================
 
-# 🔥 TESTS DESABILITADOS NO WINDOWS
-if(WIN32)
-    option(LIBZUPT_BUILD_TESTS "Build unit tests" OFF)
-else()
-    option(LIBZUPT_BUILD_TESTS "Build unit tests" ON)
-endif()
+option(LIBZUPT_BUILD_TESTS "Build unit tests (requires Python 3 for ACVP checks)" ON)
 
 option(LIBZUPT_BUILD_EXAMPLES "Build examples" ON)
-option(LIBZUPT_BUILD_PYTHON "Build Python bindings" ON)
+option(LIBZUPT_BUILD_PYTHON "Build Python bindings (requires pybind11)" OFF)
 
 # ========================
 # SUBDIRECTORIES
@@ -187,4 +199,14 @@ endif()
 
 if(LIBZUPT_BUILD_PYTHON)
     add_subdirectory(examples_python)
+endif()
+
+if(LIBZUPT_BUILD_FUZZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "LIBZUPT_BUILD_FUZZERS requires Clang")
+    endif()
+    add_executable(zupt_fuzz_decrypt tests/fuzz_decrypt.cpp)
+    target_link_libraries(zupt_fuzz_decrypt PRIVATE zupt_static)
+    target_compile_options(zupt_fuzz_decrypt PRIVATE -fsanitize=fuzzer,address,undefined)
+    target_link_options(zupt_fuzz_decrypt PRIVATE -fsanitize=fuzzer,address,undefined)
 endif()

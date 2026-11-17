@@ -23,6 +23,7 @@ final class ZuptFFI
 
         uint8_t *zupt_read_file(const char *path, size_t *size);
         int zupt_write_file(const char *path, const uint8_t *data, size_t size);
+        int zupt_write_private_key(const char *path, const uint8_t *data, size_t size);
 
         uint8_t *zupt_hybrid_encrypt(
             const uint8_t *pub_key,
@@ -48,7 +49,7 @@ final class ZuptFFI
         void zupt_sha256(const uint8_t *data, size_t len, uint8_t out[32]);
         void zupt_sha3_512(const uint8_t *data, size_t len, uint8_t out[64]);
 
-        void free(void *ptr);
+        void zupt_free(void *ptr);
     CDEF;
 
     private FFI $ffi;
@@ -58,12 +59,6 @@ final class ZuptFFI
     {
         if (!extension_loaded('FFI')) {
             throw new RuntimeException('A extensão PHP FFI não está carregada.');
-        }
-
-        if (PHP_OS_FAMILY === 'Windows') {
-            throw new RuntimeException(
-                'Estes exemplos usam free() do runtime Unix. Execute em Linux/macOS ou adicione uma função zupt_free() à ABI para Windows.'
-            );
         }
 
         [$this->ffi, $this->libraryPath] = $this->loadLibrary($libraryPath);
@@ -174,7 +169,7 @@ final class ZuptFFI
             if ($length > 0) {
                 FFI::memset($pointer, 0, $length);
             }
-            $this->ffi->free($pointer);
+            $this->ffi->zupt_free($pointer);
         }
     }
 
@@ -193,7 +188,7 @@ final class ZuptFFI
             if ($length > 0) {
                 FFI::memset($pointer, 0, $length);
             }
-            $this->ffi->free($pointer);
+            $this->ffi->zupt_free($pointer);
         }
     }
 
@@ -297,7 +292,7 @@ final class ZuptFFI
                 'encHeader' => FFI::string($header, $actualHeaderLength),
             ];
         } finally {
-            $this->ffi->free($ciphertext);
+            $this->ffi->zupt_free($ciphertext);
         }
     }
 
@@ -380,6 +375,14 @@ final class ZuptFFI
             throw new RuntimeException("Não foi possível criar o diretório: {$directory}");
         }
 
+        if ($permissions === 0600) {
+            $buffer = $this->stringToBuffer($data);
+            if ($this->ffi->zupt_write_private_key($path, $buffer, strlen($data)) !== 0) {
+                throw new RuntimeException('Não foi possível gravar a chave privada com segurança.');
+            }
+            return;
+        }
+
         $bytes = file_put_contents($path, $data, LOCK_EX);
         if ($bytes === false || $bytes !== strlen($data)) {
             throw new RuntimeException("Não foi possível gravar o arquivo: {$path}");
@@ -405,15 +408,16 @@ final class ZuptFFI
         $projectRoot = dirname(__DIR__);
         foreach ([
             $projectRoot . '/build/libzupt.so',
-            $projectRoot . '/build/libzupt.so.1',
+            $projectRoot . '/build/libzupt.so.2',
             $projectRoot . '/build/libzupt.dylib',
             '/usr/local/lib64/libzupt.so',
             '/usr/local/lib/libzupt.so',
             '/usr/lib64/libzupt.so',
             '/usr/lib/libzupt.so',
-            'libzupt.so.1',
+            'libzupt.so.2',
             'libzupt.so',
             'libzupt.dylib',
+            'zupt.dll',
         ] as $candidate) {
             $candidates[] = $candidate;
         }

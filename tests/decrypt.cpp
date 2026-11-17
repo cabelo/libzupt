@@ -6,6 +6,7 @@
  */
 
 #include "zupt.hpp"
+#include "test_paths.hpp"
 #include <iostream>
 #include <fstream>
 #include <cassert>
@@ -150,7 +151,7 @@ void test_file_decryption() {
     zupt::Decryptor decryptor(keypair.secret_key);
 
     // Create test file
-    std::string testFile = "/tmp/test_decrypt.txt";
+    std::string testFile = testPath("test_decrypt.txt");
     std::ofstream tf(testFile);
     tf << "Line 1: Secret data\n";
     tf << "Line 2: More secrets\n";
@@ -161,7 +162,7 @@ void test_file_decryption() {
     auto [ciphertext, encHeader] = encryptor.encryptFile(testFile);
 
     // Save ciphertext to file for decryption
-    std::string cipherFile = "/tmp/test_decrypt.txt.cipher";
+    std::string cipherFile = testPath("test_decrypt.txt.cipher");
     std::ofstream cf(cipherFile, std::ios::binary);
     cf.write(reinterpret_cast<const char*>(ciphertext.data()), ciphertext.size());
     cf.close();
@@ -170,7 +171,8 @@ void test_file_decryption() {
     std::vector<uint8_t> decrypted = decryptor.decryptFile(cipherFile, encHeader);
 
     // Verify
-    std::ifstream expected(testFile);
+    // Compare on-disk bytes; text mode translates CRLF to LF on Windows.
+    std::ifstream expected(testFile, std::ios::binary);
     std::string expectedContent((std::istreambuf_iterator<char>(expected)),
                                 std::istreambuf_iterator<char>());
     std::string decryptedStr(decrypted.begin(), decrypted.end());

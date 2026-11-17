@@ -45,7 +45,8 @@ jobs:
           mkdir dist
           tar -czf "dist/libzupt-${RELEASE_VERSION}-linux-x86_64.tar.gz" -C "$RUNNER_TEMP/relocated" .
           cd dist
-          sha256sum *.tar.gz > SHA256SUMS
+          python3 "$GITHUB_WORKSPACE/scripts/generate-sbom.py" --root "$GITHUB_WORKSPACE" --output source.spdx.json
+          sha256sum *.tar.gz source.spdx.json > SHA256SUMS
           cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

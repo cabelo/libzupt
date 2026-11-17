@@ -44,7 +44,7 @@ void test_empty_data_encryption() {
     auto [ciphertext, encHeader] = encryptor.encryptMemory(nullptr, 0);
 
     // Empty messages still carry an authenticated record.
-    assert(ciphertext.size() == 52);
+    assert(ciphertext.size() == 96);
     assert(encHeader.size() == zupt::HYBRID_ENC_HEADER_SIZE);
 
     std::cout << "  PASS: Empty data encryption works" << std::endl;

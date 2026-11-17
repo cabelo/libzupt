@@ -8,3 +8,8 @@ foreach(kind shared static)
     target_compile_definitions(consumer_${kind} PRIVATE EXPECTED_VERSION="${libzupt_VERSION}")
     add_test(NAME consumer_${kind} COMMAND consumer_${kind})
 endforeach()
+if(WIN32)
+    add_custom_command(TARGET consumer_shared POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:libzupt::zupt_shared> $<TARGET_FILE_DIR:consumer_shared>)
+endif()

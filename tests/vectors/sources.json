@@ -1,0 +1,20 @@
+{
+  "repository": "https://github.com/usnistgov/ACVP-Server",
+  "commit": "975de31eb83d87039ec88934fdc47d8c312b892d",
+  "files": [
+    {
+      "path": "ML-KEM-keyGen-FIPS203/internalProjection.json",
+      "url": "https://raw.githubusercontent.com/usnistgov/ACVP-Server/975de31eb83d87039ec88934fdc47d8c312b892d/gen-val/json-files/ML-KEM-keyGen-FIPS203/internalProjection.json",
+      "upstream_sha256": "d7a62a2c3476957f56dd8d24f9004ea6776ccfe995ffe71a65bb9506dc9c7b1b",
+      "local_file": "acvp-keygen.json",
+      "tests": 25
+    },
+    {
+      "path": "ML-KEM-encapDecap-FIPS203/internalProjection.json",
+      "url": "https://raw.githubusercontent.com/usnistgov/ACVP-Server/975de31eb83d87039ec88934fdc47d8c312b892d/gen-val/json-files/ML-KEM-encapDecap-FIPS203/internalProjection.json",
+      "upstream_sha256": "a556952ce869bb89c3a3196a701dad89647c193a34c86eafb61a9d710d5b810f",
+      "local_file": "acvp-encap-decap.json",
+      "tests": 55
+    }
+  ]
+}

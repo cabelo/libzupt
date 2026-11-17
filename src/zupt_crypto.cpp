@@ -48,7 +48,7 @@ KeyPair KeyGenerator::generateKeyPair() {
 
     // Public key header
     memcpy(pub, "ZKEY", 4);
-    pub[4] = 0x01; // version
+    pub[4] = ZUPT_KEY_FORMAT_VERSION; // version
     pub[5] = 0x00; // no private key
     pub[6] = pub[7] = 0; // reserved
     memcpy(pub + 8, ml_pk, MLKEM_PUBLICKEYBYTES);
@@ -56,7 +56,7 @@ KeyPair KeyGenerator::generateKeyPair() {
 
     // Private key header
     memcpy(priv, "ZKEY", 4);
-    priv[4] = 0x01; // version
+    priv[4] = ZUPT_KEY_FORMAT_VERSION; // version
     priv[5] = 0x01; // has private key
     priv[6] = priv[7] = 0; // reserved
     memcpy(priv + 8, ml_pk, MLKEM_PUBLICKEYBYTES);
@@ -90,6 +90,7 @@ KeyPair KeyGenerator::loadKeyPair(const std::string& filename) {
     }
 
     std::streamsize size = file.tellg();
+    if (size < 0) throw ZuptError(ErrorCode::ERR_IO, "Cannot determine file size");
     file.seekg(0, std::ios::beg);
 
     std::vector<uint8_t> data(size);
@@ -102,7 +103,9 @@ KeyPair KeyGenerator::loadKeyPair(const std::string& filename) {
         throw ZuptError(ErrorCode::ERR_INVALID, "Invalid key file format");
     }
 
-    bool hasPrivate = (data[5] & 0x01) != 0;
+    if ((data[4] != 1 && data[4] != ZUPT_KEY_FORMAT_VERSION) || data[6] || data[7])
+        throw ZuptError(ErrorCode::ERR_BAD_VERSION, "Unsupported key version");
+    bool hasPrivate = data[5] == 0x01;
     if (!hasPrivate) {
         throw ZuptError(ErrorCode::ERR_INVALID, "Key file does not contain private key");
     }
@@ -130,6 +133,7 @@ std::vector<uint8_t> KeyGenerator::loadPublicKey(const std::string& filename) {
     }
 
     std::streamsize size = file.tellg();
+    if (size < 0) throw ZuptError(ErrorCode::ERR_IO, "Cannot determine file size");
     file.seekg(0, std::ios::beg);
 
     std::vector<uint8_t> data(size);
@@ -148,84 +152,25 @@ std::vector<uint8_t> KeyGenerator::loadPublicKey(const std::string& filename) {
             ", got " + std::to_string(size));
     }
 
+    if ((data[4] != 1 && data[4] != ZUPT_KEY_FORMAT_VERSION) ||
+        data[5] != 0 || data[6] || data[7])
+        throw ZuptError(ErrorCode::ERR_BAD_VERSION, "Unsupported public key format");
     return data;
 }
 
 void KeyGenerator::exportPublicKey(const std::string& privfile, const std::string& pubfile) {
-    std::ifstream priv(privfile, std::ios::binary);
-    if (!priv) {
-        throw ZuptError(ErrorCode::ERR_IO, "Cannot open private key file: " + privfile);
-    }
-
-    uint8_t hdr[8];
-    if (!priv.read(reinterpret_cast<char*>(hdr), 8)) {
-        throw ZuptError(ErrorCode::ERR_IO, "Cannot read private key header");
-    }
-
-    if (memcmp(hdr, "ZKEY", 4) != 0 || !(hdr[5] & 0x01)) {
-        throw ZuptError(ErrorCode::ERR_INVALID, "Invalid private key file");
-    }
-
-    uint8_t pk_data[MLKEM_PUBLICKEYBYTES + X25519_KEYBYTES];
-    if (!priv.read(reinterpret_cast<char*>(pk_data), sizeof(pk_data))) {
-        throw ZuptError(ErrorCode::ERR_IO, "Cannot read public key data");
-    }
-    priv.close();
-
-    std::ofstream pub(pubfile, std::ios::binary);
-    if (!pub) {
-        throw ZuptError(ErrorCode::ERR_IO, "Cannot create public key file: " + pubfile);
-    }
-
-    uint8_t out[HYBRID_PUB_KEY_SIZE];
-    memcpy(out, "ZKEY", 4);
-    out[4] = 0x01; // version
-    out[5] = 0x00; // no private key
-    out[6] = out[7] = 0;
-    memcpy(out + 8, pk_data, sizeof(pk_data));
-
-    if (!pub.write(reinterpret_cast<const char*>(out), sizeof(out))) {
-        throw ZuptError(ErrorCode::ERR_IO, "Cannot write public key file");
-    }
+    const auto keys = loadKeyPair(privfile);
+    std::ofstream output(pubfile, std::ios::binary);
+    if (!output || !output.write(reinterpret_cast<const char*>(keys.public_key.data()),
+                                  keys.public_key.size()))
+        throw ZuptError(ErrorCode::ERR_IO, "Cannot write public key file: " + pubfile);
 }
 
+
 void KeyGenerator::saveKeyPair(const KeyPair& kp, const std::string& filename) {
-    /* Keep permissions and writes on the same descriptor. Never follow a
-     * symlink or truncate a shared/special file while saving a private key. */
-#if !defined(_WIN32)
-    int fd = ::open(filename.c_str(), O_WRONLY | O_CREAT | O_NOFOLLOW | O_NONBLOCK, 0600);
-    if (fd < 0) {
-        throw ZuptError(ErrorCode::ERR_IO, "Cannot create key file: " + filename);
-    }
-    struct stat st {};
-    if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_nlink != 1 ||
-        st.st_uid != ::geteuid() ||
-        ::fchmod(fd, 0600) != 0 || ::ftruncate(fd, 0) != 0) {
-        ::close(fd);
-        throw ZuptError(ErrorCode::ERR_IO, "Cannot secure key file: " + filename);
-    }
-    FILE* file = ::fdopen(fd, "wb");
-    if (!file) {
-        ::close(fd);
-        throw ZuptError(ErrorCode::ERR_IO, "Cannot open key stream: " + filename);
-    }
-    const size_t written = std::fwrite(kp.secret_key.data(), 1, kp.secret_key.size(), file);
-    const int closed = std::fclose(file);
-    if (written != kp.secret_key.size() || closed != 0) {
-        throw ZuptError(ErrorCode::ERR_IO, "Cannot write key file");
-    }
-#else
+    if (zupt_write_private_key(filename.c_str(), kp.secret_key.data(), kp.secret_key.size()) != 0)
+        throw ZuptError(ErrorCode::ERR_IO, "Cannot securely write private key: " + filename);
 
-    std::ofstream file(filename, std::ios::binary | std::ios::trunc);
-    if (!file) {
-        throw ZuptError(ErrorCode::ERR_IO, "Cannot create key file: " + filename);
-    }
-
-    if (!file.write(reinterpret_cast<const char*>(kp.secret_key.data()),
-                    kp.secret_key.size())) {
-        throw ZuptError(ErrorCode::ERR_IO, "Cannot write key file");
-    }
-#endif
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -234,35 +179,14 @@ void KeyGenerator::saveKeyPair(const KeyPair& kp, const std::string& filename) {
 
 Encryptor::Encryptor(const std::vector<uint8_t>& publicKey)
     : publicKey_(publicKey) {
-    // Pre-allocate space for encryption header
-    encryptionHeader_.resize(HYBRID_ENC_HEADER_SIZE);
+    if (publicKey_.size() != HYBRID_PUB_KEY_SIZE ||
+        std::memcmp(publicKey_.data(), "ZKEY", 4) != 0 ||
+        publicKey_[4] != ZUPT_KEY_FORMAT_VERSION || publicKey_[5] != 0 ||
+        publicKey_[6] || publicKey_[7] ||
+        zupt_mlkem768_public_key_check(publicKey_.data() + 8) != 0)
+        throw ZuptError(ErrorCode::ERR_BAD_VERSION,
+            "Encryption requires a valid v2 public key; generate new keys for migration");
 
-    // Pre-generate encryption header by doing a dummy encryption
-    // Use a single byte buffer instead of nullptr since zupt_hybrid_encrypt requires valid input
-    size_t enc_header_len = 0;
-    size_t ciphertext_len = 0;
-
-    uint8_t dummy_byte = 0;
-    uint8_t* ciphertext = zupt_hybrid_encrypt(
-        publicKey_.data(), publicKey_.size(),
-        &dummy_byte, 1,  // minimal valid plaintext for header generation
-        encryptionHeader_.data(), &enc_header_len,
-        &ciphertext_len);
-
-    if (ciphertext) {
-        free(ciphertext);
-    }
-
-    // Ciphertext should be minimal (just encryption overhead for 1 byte)
-    if (ciphertext_len > 1024) {  // Reasonable upper bound for 1 byte
-        throw ZuptError(ErrorCode::ERR_INVALID,
-            "Unexpected ciphertext size from dummy encryption");
-    }
-
-    if (enc_header_len != HYBRID_ENC_HEADER_SIZE) {
-        throw ZuptError(ErrorCode::ERR_INVALID,
-            "Unexpected encryption header size: " + std::to_string(enc_header_len));
-    }
 }
 
 Encryptor::~Encryptor() {
@@ -290,7 +214,7 @@ Encryptor::encryptMemory(const uint8_t* data, size_t size) {
         enc_header.data(), &enc_header_len,
         &ciphertext_len);
 
-    if (!ciphertext && size > 0) {
+    if (!ciphertext) {
         throw ZuptError(ErrorCode::ERR_INVALID, "Encryption failed");
     }
 
@@ -306,6 +230,7 @@ Encryptor::encryptMemory(const uint8_t* data, size_t size) {
         free(ciphertext);
     }
 
+    encryptionHeader_ = enc_header;
     return {result_ciphertext, enc_header};
 }
 
@@ -327,6 +252,7 @@ Encryptor::encryptFile(const std::string& filename) {
     }
 
     std::streamsize size = file.tellg();
+    if (size < 0) throw ZuptError(ErrorCode::ERR_IO, "Cannot determine file size");
     file.seekg(0, std::ios::beg);
 
     std::vector<uint8_t> data(size);
@@ -381,7 +307,8 @@ Decryptor::decryptMemory(const uint8_t* ciphertext, size_t ciphertextSize,
     }
 
     std::vector<uint8_t> result(plaintext, plaintext + plaintext_len);
-    free(plaintext);
+    secureWipe(plaintext, plaintext_len);
+    zupt_free(plaintext);
 
     return result;
 }
@@ -408,7 +335,9 @@ SecureBuffer
 Decryptor::decryptMemorySecure(const SecureBuffer& ciphertext,
                                const std::vector<uint8_t>& encHeader) {
     std::vector<uint8_t> result = decryptMemory(ciphertext.data(), ciphertext.size(), encHeader);
-    return SecureBuffer(result.data(), result.size());
+    SecureBuffer secure(result.data(), result.size());
+    secureWipe(result.data(), result.size());
+    return secure;
 }
 
 std::vector<uint8_t>
@@ -419,6 +348,7 @@ Decryptor::decryptFile(const std::string& filename, const std::vector<uint8_t>& 
     }
 
     std::streamsize size = file.tellg();
+    if (size < 0) throw ZuptError(ErrorCode::ERR_IO, "Cannot determine file size");
     file.seekg(0, std::ios::beg);
 
     std::vector<uint8_t> ciphertext(size);

@@ -1,0 +1,13 @@
+build*/
+**/build/
+**/node_modules/
+**/target/
+asan/
+fuzz/
+consumer/
+install/
+__pycache__/
+*.pyc
+*.key
+*.cipher
+*.header

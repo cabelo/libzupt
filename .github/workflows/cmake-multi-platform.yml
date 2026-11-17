@@ -1,75 +1,91 @@
 name: CMake on multiple platforms
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            c: gcc
-            cxx: g++
-          - os: ubuntu-latest
-            c: clang
-            cxx: clang++
-          - os: windows-latest
-            c: cl
-            cxx: cl
+          - {os: ubuntu-latest, c: gcc, cxx: g++}
+          - {os: ubuntu-latest, c: clang, cxx: clang++}
+          - {os: ubuntu-24.04-arm, c: gcc, cxx: g++}
+          - {os: macos-latest, c: clang, cxx: clang++}
+          - {os: windows-latest, c: cl, cxx: cl}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           persist-credentials: false
       - name: Configure
         run: >-
           cmake -S . -B build
-          -DCMAKE_C_COMPILER=${{ matrix.c }}
-          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
-          -DCMAKE_BUILD_TYPE=Release
-          -DLIBZUPT_BUILD_PYTHON=OFF
+          -DCMAKE_C_COMPILER=${{ matrix.c }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -DCMAKE_BUILD_TYPE=Release -DLIBZUPT_BUILD_PYTHON=OFF
       - name: Build
         run: cmake --build build --config Release --parallel 2
-      - name: Test on Linux
-        if: runner.os == 'Linux'
+      - name: Test
         run: ctest --test-dir build -C Release --output-on-failure --no-tests=error --output-junit tests.xml
-      - name: Check installed CMake package on Linux
-        if: runner.os == 'Linux'
+      - name: Stage installed package
+        run: cmake --install build --config Release --prefix "${{ runner.temp }}/libzupt-install"
+      - name: Test installed shared and static targets
         shell: bash
         run: |
-          cmake --install build --prefix "$RUNNER_TEMP/install"
-          mv "$RUNNER_TEMP/install" "$RUNNER_TEMP/relocated"
-          cmake -S tests/package -B consumer -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/relocated"
-          cmake --build consumer --parallel 2
-          ctest --test-dir consumer --output-on-failure --no-tests=error
-      - name: Build and test summary
+          mv "$RUNNER_TEMP/libzupt-install" "$RUNNER_TEMP/libzupt-relocated"
+          cmake -S tests/package -B consumer -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/libzupt-relocated"
+          cmake --build consumer --config Release --parallel 2
+          ctest --test-dir consumer -C Release --output-on-failure --no-tests=error
+      - name: Preserve actual results
         if: always()
-        shell: bash
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tests-${{ matrix.os }}-${{ matrix.c }}
+          path: build/tests.xml
+          if-no-files-found: warn
+  sanitizers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with: {persist-credentials: false}
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DLIBZUPT_SANITIZERS=ON -DLIBZUPT_BUILD_PYTHON=OFF -DLIBZUPT_BUILD_EXAMPLES=OFF
+      - run: cmake --build build --parallel 2
+      # Python/ctypes loading of ASan libraries needs a separately preloaded runtime.
+      # Normal-platform jobs execute all offline Python ACVP/reference checks.
+      - run: ctest --test-dir build --output-on-failure --no-tests=error -LE python
         env:
-          BUILD_OS: ${{ runner.os }}
-          BUILD_COMPILER: ${{ matrix.cxx }}
-        run: |
-          python3 - <<'PYTHON'
-          import os
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-              summary.write(f"Commit: `{os.environ['GITHUB_SHA']}`\n\n")
-              summary.write(f"Platform: {os.environ['BUILD_OS']}; compiler: {os.environ['BUILD_COMPILER']}\n\n")
-              result = Path('build/tests.xml')
-              if result.exists():
-                  root = ET.parse(result).getroot()
-                  summary.write(f"Tests: {root.get('tests')}; failures: {root.get('failures')}; time: {root.get('time')} s\n")
-              else:
-                  summary.write('No test results produced. Windows currently receives build validation only.\n')
-          PYTHON
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1
+  reproducible-and-interop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with: {persist-credentials: false}
+      - run: python3 scripts/check-reproducible.py
+      - run: python3 -m pip install pqcrypto==1.0.0
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLIBZUPT_BUILD_PYTHON=OFF
+      - run: cmake --build build --parallel 2
+      - run: python3 scripts/check-interop.py --library build/libzupt.so
+      - run: python3 scripts/benchmark.py --library build/libzupt.so --output benchmark.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: benchmark-linux-x86_64, path: benchmark.json}
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with: {persist-credentials: false}
+      - run: cmake -S . -B build -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DLIBZUPT_SANITIZERS=ON -DLIBZUPT_BUILD_FUZZERS=ON -DLIBZUPT_BUILD_TESTS=OFF -DLIBZUPT_BUILD_EXAMPLES=OFF -DLIBZUPT_BUILD_PYTHON=OFF
+      - run: cmake --build build --parallel 2
+      - run: mkdir corpus && python3 -c "from pathlib import Path; Path('corpus/header').write_bytes(bytes([3])+bytes(1136+96)); Path('corpus/empty').write_bytes(b'')"
+      - run: build/zupt_fuzz_decrypt corpus -max_total_time=60 -max_len=8192
+        env:
+          UBSAN_OPTIONS: halt_on_error=1

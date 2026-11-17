@@ -1,5 +1,11 @@
 # libzupt - Python Examples
 
+> **Native library v2:** rebuild this integration against libzupt 2.0.0. Generate
+> new v2 keys; old ciphertext requires [explicit migration](../docs/MIGRATION.md).
+> Use the library's `zupt_free()` for C allocations. Platform/binding coverage
+> is determined by actual CI runs, not by the presence of these examples.
+
+
 This directory contains Python examples using the libzupt library through pybind11 bindings.
 
 ## Prerequisites

@@ -21,7 +21,7 @@ public static class ZuptConstants
     public const int AesNonceSize = 16;
     public const int HmacSize = 32;
 
-    public const string Version = "2.1.5";
+    public const string Version = "2.0.0";
     public const string LibraryName = "libzupt";
 }
 
@@ -53,6 +53,9 @@ internal static unsafe class ZuptNative
     internal static extern int zupt_write_file(byte* path, byte* data, nuint size);
 
     [DllImport("libzupt", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int zupt_write_private_key(byte* path, byte* data, nuint size);
+
+    [DllImport("libzupt", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void zupt_random_bytes(byte* buf, nuint len);
 
     [DllImport("libzupt", CallingConvention = CallingConvention.Cdecl)]
@@ -61,24 +64,23 @@ internal static unsafe class ZuptNative
     [DllImport("libzupt", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void zupt_sha3_512(byte* data, nuint len, byte* hash);
 
-    [DllImport("libc", EntryPoint = "free", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport("libzupt", EntryPoint = "zupt_free", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void free(byte* ptr);
 
     static ZuptNative()
     {
         NativeLibrary.SetDllImportResolver(typeof(ZuptNative).Assembly, (name, _, _) =>
         {
-            if (string.Equals(name, "libc", StringComparison.Ordinal))
+            if (name == "libzupt")
             {
-                foreach (var candidate in new[] { "libc.so.6", "libc.so", "libSystem.B.dylib" })
-                {
-                    if (NativeLibrary.TryLoad(candidate, out var handle))
-                        return handle;
-                }
+                var candidate = OperatingSystem.IsWindows() ? "zupt.dll"
+                    : OperatingSystem.IsMacOS() ? "libzupt.dylib" : "libzupt.so";
+                if (NativeLibrary.TryLoad(candidate, out var handle)) return handle;
             }
             return IntPtr.Zero;
         });
     }
+
 }
 
 /// <summary>Error thrown by any libzupt operation that fails.</summary>
@@ -178,7 +180,7 @@ public sealed class KeyGenerator
 
     public void SaveKeyPair(KeyPair keyPair, string filename)
     {
-        Zupt.WriteFile(filename, keyPair.SecretKey);
+        Zupt.WritePrivateKey(filename, keyPair.SecretKey);
     }
 
     public KeyPair LoadKeyPair(string filename)
@@ -419,6 +421,17 @@ public static class Zupt
         {
             if (data != null)
                 ZuptNative.free(data);
+        }
+    }
+
+    public static unsafe void WritePrivateKey(string path, byte[] data)
+    {
+        var pathBytes = Encoding.UTF8.GetBytes(path + "\0");
+        fixed (byte* pPath = pathBytes)
+        fixed (byte* pData = data)
+        {
+            if (ZuptNative.zupt_write_private_key(pPath, pData, (nuint)data.Length) != 0)
+                throw new ZuptException("Cannot securely write private key");
         }
     }
 

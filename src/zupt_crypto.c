@@ -12,6 +12,7 @@
 #define _GNU_SOURCE
 #include "zupt.h"
 #include "zupt_acsl.h"
+#include "zupt_cxx.h"
 #include "zupt_jasmin.h"
 #include "zupt_cpuid.h"  /* JASMIN-VERIFIED: AES-NI dispatch */
 #include <stdlib.h>
@@ -428,7 +429,7 @@ uint8_t *zupt_decrypt_buffer(const zupt_keyring_t *kr,
  * HYBRID POST-QUANTUM KEM: ML-KEM-768 + X25519 (v0.7.0)
  *
  * Security model: Secure if EITHER ML-KEM-768 OR X25519 is secure.
- * Same approach as Signal (PQXDH), iMessage (PQ3), OpenSSH 9.0+.
+ * Application-specific construction; see docs/FORMAT.md and SECURITY.md.
  *
  * Key file format (.zupt-key):
  *   [4B]  magic "ZKEY"
@@ -447,7 +448,7 @@ uint8_t *zupt_decrypt_buffer(const zupt_keyring_t *kr,
 #include "zupt_keccak.h"
 
 #define ZKEY_MAGIC "ZKEY"
-#define ZKEY_VERSION 0x01
+#define ZKEY_VERSION ZUPT_KEY_FORMAT_VERSION
 #define ZKEY_FLAG_PRIVATE 0x01
 #define ZKEY_PUB_SIZE  (8 + 1184 + 32)        /* header + ml_kem_pk + x25519_pk */
 #define ZKEY_PRIV_SIZE (8 + 1184 + 32 + 2400 + 32) /* + ml_kem_sk + x25519_sk */
@@ -527,8 +528,8 @@ int zupt_hybrid_export_pubkey(const char *privfile, const char *pubfile) {
     if (!f) return -1;
 
     uint8_t hdr[8];
-    if (fread(hdr, 1, 8, f) != 8 || memcmp(hdr, ZKEY_MAGIC, 4) != 0 ||
-        !(hdr[5] & ZKEY_FLAG_PRIVATE)) {
+    if (fread(hdr, 1, 8, f) != 8 || memcmp(hdr, ZKEY_MAGIC, 4) != 0 || hdr[4] != ZKEY_VERSION ||
+        hdr[5] != ZKEY_FLAG_PRIVATE || hdr[6] || hdr[7]) {
         fclose(f); return -1;
     }
 
@@ -562,7 +563,7 @@ static int read_pubkey(const char *path, uint8_t ml_pk[1184], uint8_t x_pk[32]) 
     if (!f) return -1;
 
     uint8_t hdr[8];
-    if (fread(hdr, 1, 8, f) != 8 || memcmp(hdr, ZKEY_MAGIC, 4) != 0) {
+    if (fread(hdr, 1, 8, f) != 8 || memcmp(hdr, ZKEY_MAGIC, 4) != 0 || hdr[4] != ZKEY_VERSION || hdr[6] || hdr[7]) {
         fclose(f); return -1;
     }
     if (fread(ml_pk, 1, 1184, f) != 1184) { fclose(f); return -1; }
@@ -578,8 +579,8 @@ static int read_privkey(const char *path, uint8_t ml_pk[1184], uint8_t x_pk[32],
     if (!f) return -1;
 
     uint8_t hdr[8];
-    if (fread(hdr, 1, 8, f) != 8 || memcmp(hdr, ZKEY_MAGIC, 4) != 0 ||
-        !(hdr[5] & ZKEY_FLAG_PRIVATE)) {
+    if (fread(hdr, 1, 8, f) != 8 || memcmp(hdr, ZKEY_MAGIC, 4) != 0 || hdr[4] != ZKEY_VERSION ||
+        hdr[5] != ZKEY_FLAG_PRIVATE || hdr[6] || hdr[7]) {
         fclose(f); return -1;
     }
     if (fread(ml_pk, 1, 1184, f) != 1184) { fclose(f); return -1; }
@@ -593,8 +594,9 @@ static int read_privkey(const char *path, uint8_t ml_pk[1184], uint8_t x_pk[32],
 /* Parse a public key directly from an in-memory buffer (no temp files). */
 static int parse_pubkey_buf(const uint8_t *buf, size_t len,
                             uint8_t ml_pk[1184], uint8_t x_pk[32]) {
-    if (!buf || len < (size_t)(8 + 1184 + 32)) return -1;
-    if (memcmp(buf, ZKEY_MAGIC, 4) != 0) return -1;
+    if (!buf || len != (size_t)(8 + 1184 + 32)) return -1;
+    if (memcmp(buf, ZKEY_MAGIC, 4) != 0 || buf[4] != ZKEY_VERSION ||
+        buf[5] != 0 || buf[6] || buf[7]) return -1;
     memcpy(ml_pk, buf + 8, 1184);
     memcpy(x_pk, buf + 8 + 1184, 32);
     return 0;
@@ -603,9 +605,10 @@ static int parse_pubkey_buf(const uint8_t *buf, size_t len,
 /* Parse a private key directly from an in-memory buffer (no temp files). */
 static int parse_privkey_buf(const uint8_t *buf, size_t len,
                              uint8_t ml_pk[1184], uint8_t x_pk[32],
-                             uint8_t ml_sk[2400], uint8_t x_sk[32]) {
-    if (!buf || len < (size_t)(8 + 1184 + 32 + 2400 + 32)) return -1;
-    if (memcmp(buf, ZKEY_MAGIC, 4) != 0 || !(buf[5] & ZKEY_FLAG_PRIVATE)) return -1;
+                             uint8_t ml_sk[2400], uint8_t x_sk[32], int legacy) {
+    if (!buf || len != (size_t)(8 + 1184 + 32 + 2400 + 32)) return -1;
+    if (memcmp(buf, ZKEY_MAGIC, 4) != 0 || buf[4] != (legacy ? 1 : ZKEY_VERSION) ||
+        buf[5] != ZKEY_FLAG_PRIVATE || buf[6] || buf[7]) return -1;
     memcpy(ml_pk, buf + 8, 1184);
     memcpy(x_pk, buf + 8 + 1184, 32);
     memcpy(ml_sk, buf + 8 + 1184 + 32, 2400);
@@ -613,18 +616,45 @@ static int parse_privkey_buf(const uint8_t *buf, size_t len,
     return 0;
 }
 
+/* Internal compatibility symbol, deliberately absent from installed headers. */
+extern int zupt_legacy_mlkem768_decaps(uint8_t *, const uint8_t *, const uint8_t *);
+
+static int all_zero(const uint8_t *p, size_t len) {
+    uint8_t nonzero = 0;
+    for (size_t i = 0; i < len; ++i) nonzero |= p[i];
+    return nonzero == 0;
+}
+
+static void hybrid_kdf(const uint8_t ml_ss[32], const uint8_t x_ss[32],
+                       const uint8_t ct[1088], const uint8_t eph_pk[32],
+                       int legacy, uint8_t key[64]) {
+    if (legacy) {
+        uint8_t input[32 + 1088 + 32 + 15];
+        for (size_t i = 0; i < 32; ++i) input[i] = ml_ss[i] ^ x_ss[i];
+        memcpy(input + 32, ct, 1088);
+        memcpy(input + 1120, eph_pk, 32);
+        /* Historical format includes the terminating NUL. */
+        memcpy(input + 1152, "ZUPT-HYBRID-v1", 15);
+        zupt_sha3_512(input, sizeof(input), key);
+        zupt_secure_wipe(input, sizeof(input));
+    } else {
+        static const char context[] = "libzupt/hybrid/v2";
+        uint8_t input[64 + 1088 + 32 + sizeof(context) - 1];
+        memcpy(input, ml_ss, 32);
+        memcpy(input + 32, x_ss, 32);
+        memcpy(input + 64, ct, 1088);
+        memcpy(input + 1152, eph_pk, 32);
+        memcpy(input + 1184, context, sizeof(context) - 1);
+        zupt_sha3_512(input, sizeof(input), key);
+        zupt_secure_wipe(input, sizeof(input));
+    }
+}
+
 /*
- * HYBRID ENCRYPT INIT: Encapsulate with ML-KEM + X25519, derive archive keys.
- *
- * enc_hdr output (1121 bytes):
- *   [1B]    enc_type = 0x02 (PQ-Hybrid)
- *   [1088B] ml_kem_ciphertext
- *   [32B]   ephemeral_x25519_pubkey
- *
- * Key derivation:
- *   hybrid_ikm = ml_kem_ss XOR x25519_ss
- *   archive_key[64] = SHA-256(hybrid_ikm ‖ ml_kem_ct ‖ ephemeral_pk ‖ "ZUPT-HYBRID-v1")
- *   enc_key = archive_key[0:32], mac_key = archive_key[32:64]
+ * HYBRID ENCRYPT INIT (v2): ML-KEM-768 + X25519, then domain-separated SHA3-512.
+ * Header: discriminator 0x03 || ml_ct[1088] || eph_pk[32] || nonce[16].
+ * Concatenate both component secrets and the encapsulation transcript; the
+ * legacy XOR/Kyber-era behavior is isolated in explicit recovery only.
  */
 /* FRAMA-C: Hybrid PQ encrypt init — ML-KEM-768 + X25519 KEM */
 /*@ requires \valid(kr);
@@ -652,20 +682,14 @@ static int hybrid_encrypt_core(zupt_keyring_t *kr,
     zupt_x25519_base(eph_pk, eph_sk);
     zupt_x25519(x_ss, eph_sk, x_pk);
 
-    /* Hybrid shared secret: XOR then hash with transcript */
-    uint8_t hybrid_ikm[32];
-    for (int i = 0; i < 32; i++) hybrid_ikm[i] = ml_ss[i] ^ x_ss[i];
-
-    /* archive_key = SHA-256(hybrid_ikm ‖ ml_ct ‖ eph_pk ‖ "ZUPT-HYBRID-v1") */
-    /* We need 64 bytes, so use SHA3-512 instead of SHA-256 */
-    uint8_t kdf_input[32 + 1088 + 32 + 15];
-    memcpy(kdf_input, hybrid_ikm, 32);
-    memcpy(kdf_input + 32, ml_ct, 1088);
-    memcpy(kdf_input + 32 + 1088, eph_pk, 32);
-    memcpy(kdf_input + 32 + 1088 + 32, "ZUPT-HYBRID-v1", 15);
-
+    if (all_zero(x_ss, sizeof(x_ss))) {
+        zupt_secure_wipe(ml_ss, sizeof(ml_ss));
+        zupt_secure_wipe(x_ss, sizeof(x_ss));
+        zupt_secure_wipe(eph_sk, sizeof(eph_sk));
+        return -1;
+    }
     uint8_t archive_key[64];
-    zupt_sha3_512(kdf_input, sizeof(kdf_input), archive_key);
+    hybrid_kdf(ml_ss, x_ss, ml_ct, eph_pk, 0, archive_key);
 
     /* Set up keyring */
     kr->canary_head = ZUPT_CANARY;
@@ -681,7 +705,7 @@ static int hybrid_encrypt_core(zupt_keyring_t *kr,
     zupt_mlock_keys(kr->mac_key, ZUPT_HMAC_SIZE);
 
     /* Build encryption header: enc_type(1) + ml_ct(1088) + eph_pk(32) + base_nonce(16) */
-    enc_hdr[0] = ZUPT_ENC_PQ_HYBRID;
+    enc_hdr[0] = ZUPT_ENVELOPE_FORMAT;
     memcpy(enc_hdr + 1, ml_ct, 1088);
     memcpy(enc_hdr + 1 + 1088, eph_pk, 32);
     memcpy(enc_hdr + 1 + 1088 + 32, kr->base_nonce, 16);
@@ -691,8 +715,6 @@ static int hybrid_encrypt_core(zupt_keyring_t *kr,
     zupt_secure_wipe(ml_ss, 32);
     zupt_secure_wipe(x_ss, 32);
     zupt_secure_wipe(eph_sk, 32);
-    zupt_secure_wipe(hybrid_ikm, 32);
-    zupt_secure_wipe(kdf_input, sizeof(kdf_input));
     zupt_secure_wipe(archive_key, 64);
 
     return 0;
@@ -730,9 +752,9 @@ int zupt_hybrid_encrypt_init_mem(zupt_keyring_t *kr,
  * the caller owns and wipes ml_sk/x_sk. */
 static int hybrid_decrypt_core(zupt_keyring_t *kr,
                                const uint8_t ml_sk[2400], const uint8_t x_sk[32],
-                               const uint8_t *enc_hdr, size_t enc_hdr_len) {
-    if (enc_hdr_len < 1 + 1088 + 32 + 16) return -1;  /* enc_type + ct + eph_pk + nonce */
-    if (enc_hdr[0] != ZUPT_ENC_PQ_HYBRID) return -1;
+                               const uint8_t *enc_hdr, size_t enc_hdr_len, int legacy) {
+    if (!kr || !enc_hdr || enc_hdr_len != 1137) return -1;
+    if (enc_hdr[0] != (legacy ? 2 : ZUPT_ENVELOPE_FORMAT)) return -1;
 
     const uint8_t *ml_ct  = enc_hdr + 1;
     const uint8_t *eph_pk = enc_hdr + 1 + 1088;
@@ -740,24 +762,21 @@ static int hybrid_decrypt_core(zupt_keyring_t *kr,
 
     /* ML-KEM-768 decapsulation */
     uint8_t ml_ss[32];
-    zupt_mlkem768_decaps(ml_ss, ml_ct, ml_sk);
+    int ret = legacy ? zupt_legacy_mlkem768_decaps(ml_ss, ml_ct, ml_sk)
+                     : zupt_mlkem768_decaps(ml_ss, ml_ct, ml_sk);
+    if (ret != 0) return -1;
 
     /* X25519 ECDH with ephemeral pubkey */
     uint8_t x_ss[32];
     zupt_x25519(x_ss, x_sk, eph_pk);
 
-    /* Same key derivation as encrypt */
-    uint8_t hybrid_ikm[32];
-    for (int i = 0; i < 32; i++) hybrid_ikm[i] = ml_ss[i] ^ x_ss[i];
-
-    uint8_t kdf_input[32 + 1088 + 32 + 15];
-    memcpy(kdf_input, hybrid_ikm, 32);
-    memcpy(kdf_input + 32, ml_ct, 1088);
-    memcpy(kdf_input + 32 + 1088, eph_pk, 32);
-    memcpy(kdf_input + 32 + 1088 + 32, "ZUPT-HYBRID-v1", 15);
-
+    if (all_zero(x_ss, sizeof(x_ss))) {
+        zupt_secure_wipe(ml_ss, sizeof(ml_ss));
+        zupt_secure_wipe(x_ss, sizeof(x_ss));
+        return -1;
+    }
     uint8_t archive_key[64];
-    zupt_sha3_512(kdf_input, sizeof(kdf_input), archive_key);
+    hybrid_kdf(ml_ss, x_ss, ml_ct, eph_pk, legacy, archive_key);
 
     kr->canary_head = ZUPT_CANARY;
     memcpy(kr->enc_key, archive_key, 32);
@@ -773,8 +792,6 @@ static int hybrid_decrypt_core(zupt_keyring_t *kr,
 
     zupt_secure_wipe(ml_ss, 32);
     zupt_secure_wipe(x_ss, 32);
-    zupt_secure_wipe(hybrid_ikm, 32);
-    zupt_secure_wipe(kdf_input, sizeof(kdf_input));
     zupt_secure_wipe(archive_key, 64);
 
     return 0;
@@ -784,7 +801,7 @@ int zupt_hybrid_decrypt_init(zupt_keyring_t *kr, const char *privkeyfile,
                               const uint8_t *enc_hdr, size_t enc_hdr_len) {
     uint8_t ml_pk[1184], x_pk[32], ml_sk[2400], x_sk[32];
     if (read_privkey(privkeyfile, ml_pk, x_pk, ml_sk, x_sk) != 0) return -1;
-    int r = hybrid_decrypt_core(kr, ml_sk, x_sk, enc_hdr, enc_hdr_len);
+    int r = hybrid_decrypt_core(kr, ml_sk, x_sk, enc_hdr, enc_hdr_len, 0);
     zupt_secure_wipe(ml_sk, sizeof(ml_sk));
     zupt_secure_wipe(x_sk, 32);
     return r;
@@ -794,9 +811,22 @@ int zupt_hybrid_decrypt_init_mem(zupt_keyring_t *kr,
                                   const uint8_t *privkey, size_t privkey_len,
                                   const uint8_t *enc_hdr, size_t enc_hdr_len) {
     uint8_t ml_pk[1184], x_pk[32], ml_sk[2400], x_sk[32];
-    if (parse_privkey_buf(privkey, privkey_len, ml_pk, x_pk, ml_sk, x_sk) != 0) return -1;
-    int r = hybrid_decrypt_core(kr, ml_sk, x_sk, enc_hdr, enc_hdr_len);
+    if (parse_privkey_buf(privkey, privkey_len, ml_pk, x_pk, ml_sk, x_sk, 0) != 0) return -1;
+    int r = hybrid_decrypt_core(kr, ml_sk, x_sk, enc_hdr, enc_hdr_len, 0);
     zupt_secure_wipe(ml_sk, sizeof(ml_sk));
     zupt_secure_wipe(x_sk, 32);
     return r;
+}
+
+/* Called only by the explicit legacy recovery API, which also checks a trusted
+ * SHA-256 digest before returning any plaintext to its caller. */
+int zupt_hybrid_decrypt_init_legacy_mem(zupt_keyring_t *kr,
+    const uint8_t *privkey, size_t privkey_len,
+    const uint8_t *enc_hdr, size_t enc_hdr_len) {
+    uint8_t ml_pk[1184], x_pk[32], ml_sk[2400], x_sk[32];
+    if (parse_privkey_buf(privkey, privkey_len, ml_pk, x_pk, ml_sk, x_sk, 1) != 0) return -1;
+    int ret = hybrid_decrypt_core(kr, ml_sk, x_sk, enc_hdr, enc_hdr_len, 1);
+    zupt_secure_wipe(ml_sk, sizeof(ml_sk));
+    zupt_secure_wipe(x_sk, sizeof(x_sk));
+    return ret;
 }

@@ -11,7 +11,7 @@
  * review before use in high-assurance production environments.
  *
  * CT-REQUIRED markers indicate operations that must be constant-time.
- * All polynomial operations avoid secret-dependent branches.
+ * Fixed-shape polynomial loops; compiler/target side-channel review is still required.
  * Implicit rejection in decaps uses constant-time conditional select.
  */
 #define _GNU_SOURCE
@@ -341,7 +341,7 @@ static void kpke_keygen(uint8_t pk[1184], uint8_t sk_pke[1152], const uint8_t d[
     polyvec Ahat[MLKEM_K];
     for (int i = 0; i < MLKEM_K; i++)
         for (int j = 0; j < MLKEM_K; j++)
-            poly_uniform(Ahat[i][j], rho, (uint8_t)i, (uint8_t)j);
+            poly_uniform(Ahat[i][j], rho, (uint8_t)j, (uint8_t)i);
 
     /* Sample secret vector s */
     polyvec s;
@@ -383,7 +383,7 @@ static void kpke_keygen(uint8_t pk[1184], uint8_t sk_pke[1152], const uint8_t d[
 
 /* K-PKE encrypt: encrypt message m (32 bytes) under pk with randomness r (32 bytes) */
 static void kpke_encrypt(uint8_t ct[1088], const uint8_t pk[1184],
-                          const uint8_t m[32], const uint8_t r[32]) {
+                          const uint8_t m[32], const uint8_t r[32], int legacy) {
     /* Decode pk */
     polyvec t_hat;
     polyvec_frombytes(t_hat, pk);
@@ -394,7 +394,8 @@ static void kpke_encrypt(uint8_t ct[1088], const uint8_t pk[1184],
     polyvec AT[MLKEM_K];
     for (int i = 0; i < MLKEM_K; i++)
         for (int j = 0; j < MLKEM_K; j++)
-            poly_uniform(AT[i][j], rho, (uint8_t)j, (uint8_t)i);
+            poly_uniform(AT[i][j], rho, (uint8_t)(legacy ? j : i),
+                         (uint8_t)(legacy ? i : j));
 
     /* Sample r_vec, e1, e2 */
     polyvec r_vec;
@@ -475,7 +476,7 @@ static void kpke_decrypt(uint8_t m[32], const uint8_t ct[1088],
 }
 
 /* ═══════════════════════════════════════════════════════════════════
- * ML-KEM-768 CCAKEM (FIPS 203 §7.1, §7.4)
+ * ML-KEM-768 (FIPS 203 Sections 6-7)
  * Fujisaki-Okamoto transform for CCA security.
  * ═══════════════════════════════════════════════════════════════════ */
 
@@ -487,159 +488,149 @@ static void kpke_decrypt(uint8_t m[32], const uint8_t ct[1088],
   @ ensures \result == 0 ==> \initialized(pk + (0..1183));
   @ ensures \result == 0 ==> \initialized(sk + (0..2399));
 */
-int zupt_mlkem768_keygen(uint8_t pk[1184], uint8_t sk[2400]) {
-    /* d ← random 32 bytes */
-    uint8_t d[32];
-    zupt_random_bytes(d, 32);
+int zupt_mlkem768_public_key_check(const uint8_t pk[1184]) {
+    if (!pk) return -1;
+    /* FIPS 203 Algorithm 20: ByteEncode_12(ByteDecode_12(ek)) == ek. */
+    uint32_t invalid = 0;
+    for (size_t i = 0; i < 1152; i += 3) {
+        uint16_t a = (uint16_t)(pk[i] | ((uint16_t)(pk[i + 1] & 15) << 8));
+        uint16_t b = (uint16_t)((pk[i + 1] >> 4) | ((uint16_t)pk[i + 2] << 4));
+        invalid |= (uint32_t)(a >= Q) | (uint32_t)(b >= Q);
+    }
+    return invalid ? -1 : 0;
+}
 
-    /* z ← random 32 bytes (for implicit rejection) */
-    uint8_t z[32];
-    zupt_random_bytes(z, 32);
+int zupt_mlkem768_secret_key_check(const uint8_t sk[2400]) {
+    if (!sk) return -1;
+    uint8_t h[32], diff = 0;
+    zupt_sha3_256(sk + 1152, 1184, h);
+    for (size_t i = 0; i < 32; ++i) diff |= h[i] ^ sk[2336 + i];
+    zupt_secure_wipe(h, sizeof(h));
+    return diff ? -1 : 0;
+}
 
-    /* Generate K-PKE keypair */
+static int mlkem_keygen_internal(uint8_t pk[1184], uint8_t sk[2400],
+                                 const uint8_t d[32], const uint8_t z[32]) {
     uint8_t sk_pke[1152];
     kpke_keygen(pk, sk_pke, d);
-
-    /* sk = sk_pke ‖ pk ‖ H(pk) ‖ z */
     memcpy(sk, sk_pke, 1152);
     memcpy(sk + 1152, pk, 1184);
-    zupt_sha3_256(pk, 1184, sk + 1152 + 1184); /* H(pk) */
-    memcpy(sk + 1152 + 1184 + 32, z, 32);
-
-    zupt_secure_wipe(d, 32);
-    zupt_secure_wipe(z, 32);
+    zupt_sha3_256(pk, 1184, sk + 2336);
+    memcpy(sk + 2368, z, 32);
     zupt_secure_wipe(sk_pke, sizeof(sk_pke));
     return 0;
 }
 
-/* FRAMA-C: ML-KEM-768 encapsulation (FIPS 203) */
-/*@ requires \valid(ct + (0..1087));
-  @ requires \valid(ss + (0..31));
-  @ requires \valid_read(pk + (0..1183));
-  @ requires \separated(ct + (0..1087), ss + (0..31));
-  @ requires \separated(ct + (0..1087), pk + (0..1183));
-  @ assigns ct[0..1087], ss[0..31];
-  @ ensures \result == 0 ==> \initialized(ct + (0..1087));
-  @ ensures \result == 0 ==> \initialized(ss + (0..31));
-*/
+int zupt_mlkem768_keygen(uint8_t pk[1184], uint8_t sk[2400]) {
+    if (!pk || !sk) return -1;
+    uint8_t d[32], z[32];
+    zupt_random_bytes(d, sizeof(d));
+    zupt_random_bytes(z, sizeof(z));
+    int ret = mlkem_keygen_internal(pk, sk, d, z);
+    zupt_secure_wipe(d, sizeof(d));
+    zupt_secure_wipe(z, sizeof(z));
+    return ret;
+}
+
+static int mlkem_encaps_internal(uint8_t ct[1088], uint8_t ss[32],
+                                 const uint8_t pk[1184], const uint8_t m[32]) {
+    if (zupt_mlkem768_public_key_check(pk) != 0) return -1;
+    uint8_t input[64], kr[64];
+    memcpy(input, m, 32);
+    zupt_sha3_256(pk, 1184, input + 32);
+    zupt_sha3_512(input, sizeof(input), kr);
+    kpke_encrypt(ct, pk, m, kr + 32, 0);
+    /* FIPS 203 Algorithm 17 returns K directly; no Kyber-era final KDF. */
+    memcpy(ss, kr, 32);
+    zupt_secure_wipe(input, sizeof(input));
+    zupt_secure_wipe(kr, sizeof(kr));
+    return 0;
+}
+
 int zupt_mlkem768_encaps(uint8_t ct[1088], uint8_t ss[32],
-                          const uint8_t pk[1184]) {
-    /* m ← random 32 bytes */
+                        const uint8_t pk[1184]) {
+    if (!ct || !ss || !pk || zupt_mlkem768_public_key_check(pk) != 0) return -1;
     uint8_t m[32];
-    zupt_random_bytes(m, 32);
-
-    /* (K, r) = G(m ‖ H(pk)) */
-    uint8_t h_pk[32];
-    zupt_sha3_256(pk, 1184, h_pk);
-
-    uint8_t kr_input[64];
-    memcpy(kr_input, m, 32);
-    memcpy(kr_input + 32, h_pk, 32);
-    uint8_t kr[64];
-    zupt_sha3_512(kr_input, 64, kr);
-
-    /* Encrypt m under pk with randomness r */
-    kpke_encrypt(ct, pk, m, kr + 32);
-
-    /* K = KDF(kr[0:32] ‖ H(ct)) */
-    uint8_t h_ct[32];
-    zupt_sha3_256(ct, 1088, h_ct);
-    uint8_t kdf_in[64];
-    memcpy(kdf_in, kr, 32);
-    memcpy(kdf_in + 32, h_ct, 32);
-    zupt_shake256(kdf_in, 64, ss, 32);
-
-    zupt_secure_wipe(m, 32);
-    zupt_secure_wipe(kr, 64);
-    zupt_secure_wipe(kr_input, 64);
-    zupt_secure_wipe(kdf_in, 64);
-    return 0;
+    zupt_random_bytes(m, sizeof(m));
+    int ret = mlkem_encaps_internal(ct, ss, pk, m);
+    zupt_secure_wipe(m, sizeof(m));
+    return ret;
 }
 
-/* CT-REQUIRED: Implicit rejection — if ciphertext is invalid, produce
- * pseudorandom ss from z (no distinguishable failure). Both paths execute
- * fully; final selection uses constant-time conditional move. */
-/* FRAMA-C: ML-KEM-768 decapsulation with implicit rejection (FIPS 203)
- * CT-REQUIRED: Invalid ciphertext produces pseudorandom ss (no distinguishable failure) */
-/*@ requires \valid(ss + (0..31));
-  @ requires \valid_read(ct + (0..1087));
-  @ requires \valid_read(sk + (0..2399));
-  @ requires \separated(ss + (0..31), ct + (0..1087));
-  @ assigns ss[0..31];
-  @ ensures \result == 0;
-  @ ensures \initialized(ss + (0..31));
-*/
-int zupt_mlkem768_decaps(uint8_t ss[32], const uint8_t ct[1088],
-                          const uint8_t sk[2400]) {
-    /* Parse sk = sk_pke ‖ pk ‖ h ‖ z */
-    const uint8_t *sk_pke = sk;
-    const uint8_t *pk     = sk + 1152;
-    const uint8_t *h      = sk + 1152 + 1184;
-    const uint8_t *z      = sk + 1152 + 1184 + 32;
-
-    /* Decrypt to get m' */
-    uint8_t m_prime[32];
-    kpke_decrypt(m_prime, ct, sk_pke);
-
-    /* (K', r') = G(m' ‖ h) */
-    uint8_t kr_input[64];
-    memcpy(kr_input, m_prime, 32);
-    memcpy(kr_input + 32, h, 32);
-    uint8_t kr[64];
-    zupt_sha3_512(kr_input, 64, kr);
-
-    /* Re-encrypt: ct' = Encrypt(pk, m', r') */
-    uint8_t ct_prime[1088];
-    kpke_encrypt(ct_prime, pk, m_prime, kr + 32);
-
-    /* CT-REQUIRED: Compare ct and ct' in constant time */
+/* legacy is a public format selector, never a secret-dependent decision.
+ * The legacy path exists only for explicit, authenticated-digest migration. */
+static int mlkem_decaps_internal(uint8_t ss[32], const uint8_t ct[1088],
+                                 const uint8_t sk[2400], int legacy) {
+    if (!ss || !ct || !sk) return -1;
+    if (!legacy && zupt_mlkem768_secret_key_check(sk) != 0) return -1;
+    const uint8_t *pk = sk + 1152, *h = sk + 2336, *z = sk + 2368;
+    uint8_t m[32], input[64], kr[64], check_ct[1088];
+    uint8_t good[32], reject[32], reject_input[32 + 1088];
+    kpke_decrypt(m, ct, sk);
+    memcpy(input, m, 32);
+    memcpy(input + 32, h, 32);
+    zupt_sha3_512(input, sizeof(input), kr);
+    kpke_encrypt(check_ct, pk, m, kr + 32, legacy);
     uint8_t diff = 0;
-    for (int i = 0; i < 1088; i++)
-        diff |= ct[i] ^ ct_prime[i];
-
-    /* Compute success key: K = KDF(kr[0:32] ‖ H(ct)) */
-    uint8_t h_ct[32];
-    zupt_sha3_256(ct, 1088, h_ct);
-
-    uint8_t kdf_success[64];
-    memcpy(kdf_success, kr, 32);
-    memcpy(kdf_success + 32, h_ct, 32);
-    uint8_t ss_success[32];
-    zupt_shake256(kdf_success, 64, ss_success, 32);
-
-    /* Compute rejection key: K_bar = KDF(z ‖ H(ct)) */
-    uint8_t kdf_reject[64];
-    memcpy(kdf_reject, z, 32);
-    memcpy(kdf_reject + 32, h_ct, 32);
-    uint8_t ss_reject[32];
-    zupt_shake256(kdf_reject, 64, ss_reject, 32);
-
-    /* CT-REQUIRED: Select success or reject key without branching.
-     * If diff == 0 (ct matches): use ss_success.
-     * If diff != 0 (ct differs): use ss_reject (implicit rejection).
-     *
-     * Convert diff (0 or nonzero) to fail (0 or 1) using constant-time
-     * bit trick: fail = ((-(uint64_t)diff) >> 63) & 1 */
-    uint8_t fail = (uint8_t)(((-(int64_t)(uint64_t)diff) >> 63) & 1);
+    for (size_t i = 0; i < 1088; ++i) diff |= ct[i] ^ check_ct[i];
+    if (legacy) {
+        uint8_t h_ct[32];
+        zupt_sha3_256(ct, 1088, h_ct);
+        memcpy(input, kr, 32);
+        memcpy(input + 32, h_ct, 32);
+        zupt_shake256(input, sizeof(input), good, 32);
+        memcpy(input, z, 32);
+        zupt_shake256(input, sizeof(input), reject, 32);
+        zupt_secure_wipe(h_ct, sizeof(h_ct));
+    } else {
+        memcpy(good, kr, 32);
+        memcpy(reject_input, z, 32);
+        memcpy(reject_input + 32, ct, 1088);
+        /* FIPS 203 Algorithm 18: J(z || c), not J(z || H(c)). */
+        zupt_shake256(reject_input, sizeof(reject_input), reject, 32);
+    }
+    /* Unsigned arithmetic avoids implementation-defined signed shifts. */
+    uint8_t fail = (uint8_t)(((uint32_t)diff | (0u - (uint32_t)diff)) >> 31);
 #ifdef ZUPT_USE_JASMIN
-    /* JASMIN-VERIFIED: CT select — proven by Jasmin type system.
-     * fail=0 → ss_success, fail=1 → ss_reject */
-    zupt_ct_select_32(ss, ss_success, ss_reject, (uint64_t)fail);
+    zupt_ct_select_32(ss, good, reject, fail);
 #else
-    memcpy(ss, ss_reject, 32);
-    cmov(ss, ss_success, 32, (uint8_t)(1 - fail));
+    memcpy(ss, reject, 32);
+    cmov(ss, good, 32, (uint8_t)(1u - fail));
 #endif
-
-    zupt_secure_wipe(m_prime, 32);
-    zupt_secure_wipe(kr, 64);
-    zupt_secure_wipe(kr_input, 64);
-    zupt_secure_wipe(ct_prime, sizeof(ct_prime));
-    zupt_secure_wipe(kdf_success, 64);
-    zupt_secure_wipe(kdf_reject, 64);
-    zupt_secure_wipe(ss_success, 32);
-    zupt_secure_wipe(ss_reject, 32);
+    zupt_secure_wipe(m, sizeof(m));
+    zupt_secure_wipe(input, sizeof(input));
+    zupt_secure_wipe(kr, sizeof(kr));
+    zupt_secure_wipe(check_ct, sizeof(check_ct));
+    zupt_secure_wipe(good, sizeof(good));
+    zupt_secure_wipe(reject, sizeof(reject));
+    zupt_secure_wipe(reject_input, sizeof(reject_input));
+    zupt_secure_wipe(&diff, sizeof(diff));
+    zupt_secure_wipe(&fail, sizeof(fail));
     return 0;
 }
+
+int zupt_mlkem768_decaps(uint8_t ss[32], const uint8_t ct[1088],
+                        const uint8_t sk[2400]) {
+    return mlkem_decaps_internal(ss, ct, sk, 0);
+}
+
+/* Internal symbol: not declared in the installed public interface. */
+int zupt_legacy_mlkem768_decaps(uint8_t ss[32], const uint8_t ct[1088],
+                               const uint8_t sk[2400]) {
+    return mlkem_decaps_internal(ss, ct, sk, 1);
+}
+
+#ifdef ZUPT_TESTING
+/* Deterministic ACVP entry points are compiled only into the test executable. */
+int zupt_test_mlkem_keygen(uint8_t pk[1184], uint8_t sk[2400],
+                          const uint8_t d[32], const uint8_t z[32]) {
+    return mlkem_keygen_internal(pk, sk, d, z);
+}
+int zupt_test_mlkem_encaps(uint8_t ct[1088], uint8_t ss[32],
+                          const uint8_t pk[1184], const uint8_t m[32]) {
+    return mlkem_encaps_internal(ct, ss, pk, m);
+}
+#endif
 
 /* ═══════════════════════════════════════════════════════════════════
  * SELF-TEST — verify internal operations
@@ -657,7 +648,7 @@ int zupt_mlkem768_selftest(void) {
         inv_ntt(b);
         int ntt_ok = 1;
         for (int i = 0; i < 256; i++) {
-            int16_t diff = (int16_t)((b[i] % Q + Q) % Q) - (int16_t)((a[i] % Q + Q) % Q);
+            int16_t diff = (int16_t)((montgomery_reduce(b[i]) % Q + Q) % Q) - (int16_t)((a[i] % Q + Q) % Q);
             if ((diff % Q + Q) % Q != 0) { ntt_ok = 0; break; }
         }
         if (!ntt_ok) { fprintf(stderr, "  MLKEM selftest: NTT roundtrip FAILED\n"); ok = 0; }
@@ -672,7 +663,7 @@ int zupt_mlkem768_selftest(void) {
         uint8_t m[32], r[32], ct[1088], m2[32];
         zupt_random_bytes(m, 32);
         zupt_random_bytes(r, 32);
-        kpke_encrypt(ct, pk, m, r);
+        kpke_encrypt(ct, pk, m, r, 0);
         kpke_decrypt(m2, ct, sk_pke);
 
         if (memcmp(m, m2, 32) != 0) {
