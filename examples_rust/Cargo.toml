@@ -13,7 +13,7 @@ path = "src/lib.rs"
 hex = "0.4"
 
 [build-dependencies]
-bindgen = "0.71"
+bindgen = "0.72.1"
 
 [[example]]
 name = "example_basic"
