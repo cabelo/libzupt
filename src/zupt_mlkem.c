@@ -14,6 +14,61 @@
  * Fixed-shape polynomial loops; compiler/target side-channel review is still required.
  * Implicit rejection in decaps uses constant-time conditional select.
  */
+/**
+ * @file   zupt_mlkem.c
+ * @brief  Implementação em C11 puro do KEM ML-KEM-768 (FIPS 203).
+ * @details Este arquivo implementa, sem dependências externas além de
+ *          zupt_keccak.h (SHA3/SHAKE) e zupt.h (aleatoriedade e limpeza
+ *          segura), a construção completa de FIPS 203 na parameterização 768:
+ *
+ *          - Aritmética modular sobre q = 3329: redução de Barrett para
+ *            int16_t (sem ramificações) e redução de Montgomery para
+ *            int32_t, com QINV = q^(-1) mod 2^16.
+ *          - NTT de 256 pontos sobre Z_q[x]/(x^256+1), com raiz primitiva
+ *            de ordem 256 zeta = 17, tabela pré-computada em domínio de
+ *            Montgomery e ordem bit-reversed; inversa com escala final
+ *            f = 1441.
+ *          - Operações de polinômio e de vetor de polinômios (soma, subtração,
+ *            produto ponto a ponto "basemul" em NTT, redução, conversão ao
+ *            domínio de Montgomery).
+ *          - Amostragem: CBD(eta=2) a partir de 128 bytes, distribuição
+ *            uniforme por rejeição sobre fluxo SHAKE-128 e ruído via
+ *            PRF SHAKE-256 + CBD.
+ *          - Codificação/decodificação em 12 bits por coeficiente e
+ *            compressão/expandir em 10 e 4 bits.
+ *          - Esquema K-PKE IND-CPA (seções 7.2-7.3 de FIPS 203) e a
+ *            transformação Fujisaki-Okamoto que produz ML-KEM-768 (seções
+ *            6-7), com rejeição implícita no decapsulamento.
+ *          - Verificações de codificação de chave pública e de chave secreta,
+ *            além de um auto-teste de ida e volta.
+ *
+ *          Estrutura de memória: um polinômio é um array de 256 int16_t
+ *          (typedef poly); coeficientes podem ficar fora de [0, q) durante os
+ *            cálculos e só são normalizados por poly_reduce() ou pelas
+ *            funções de codificação.
+ *
+ *          Seleção de ramo em tempo de compilação: ZUPT_USE_JASMIN troca a
+ *          função de seleção condicional em C por zupt_ct_select_32()
+ *          fornecida pelo Jasmin; ZUPT_TESTING habilita pontos de entrada
+ *          determinísticos usados por scripts/check-acvp.py.
+ *
+ *          Nota factual: as marcações "CT-REQUIRED" e as declarações de
+ *          tempo constante do cabeçalho acima descrevem a intenção do autor.
+ *          Os mecanismos observáveis neste arquivo são: ausência de
+ *          ramificações em barrett_reduce()/montgomery_reduce(), índices de
+ *            tabela e limites de laço independentes de dados secretos, e a
+ *            seleção final por máscara de bits. A ausência de canais laterais
+ *            depende também do compilador e da arquitetura-alvo.
+ */
+
+/**
+ * @def _GNU_SOURCE
+ * @brief Macro de feature do glibc, definido antes da primeira inclusão.
+ *
+ * Habilita as extensões GNU declaradas pelos cabeçalhos C padrão incluídos
+ * em sequência. Não é referenciado por nenhum código deste arquivo, não faz
+ * parte da API da biblioteca e não aparece na documentação pública.
+ */
 #define _GNU_SOURCE
 #include "zupt_mlkem.h"
 #include "zupt_keccak.h"
@@ -27,10 +82,23 @@
  * q = 3329, using Barrett reduction for constant-time mod.
  * ═══════════════════════════════════════════════════════════════════ */
 
+/** @brief Módulo do anel de polinômios: q = 3329. */
 #define Q 3329
+/** @brief Inverso multiplicativo de q módulo 2^16, na forma assinada (equivale a 62209 não assinado). */
 #define QINV (-3327) /* q^(-1) mod 2^16 (signed) = 62209 unsigned */
 
-/* CT-REQUIRED: Barrett reduction. No branches. */
+/**
+ * @brief Redução de Barrett: devolve a representado em [-q/2, q/2] (CT-REQUIRED).
+ * @details Calcula v = round(a * 2^26 / q) como (20159*a + 2^25) >> 26, onde
+ *          20159 = round(2^26 / q), e retorna a - v*q. Não contém nenhuma
+ *          comparação ou desvio condicional: o resultado é função apenas do
+ *          valor de `a`, o que torna o fluxo de controle independente do
+ *          dado.
+ * @param[in] a Valor a reduzir; o domínio esperado é o intervalo de int16_t.
+ * @return    Congruente a `a` módulo q, com valor absoluto menor ou igual a q/2.
+ * @note      Não idempotente em todos os valores de entrada: entradas fora do
+ *            intervalo podem produzir resultados ainda fora de [-q/2, q/2].
+ */
 static int16_t barrett_reduce(int16_t a) {
     /* v = round(2^26 / q) = 20159 */
     int16_t t = (int16_t)(((int32_t)20159 * a + (1 << 25)) >> 26);
@@ -38,7 +106,17 @@ static int16_t barrett_reduce(int16_t a) {
     return t;
 }
 
-/* CT-REQUIRED: Montgomery reduction. */
+/**
+ * @brief Redução de Montgomery por 2^16 (CT-REQUIRED).
+ * @details Calcula t = a * QINV mod 2^16 e retorna (a - t*q) / 2^16. Como
+ *          t*q ≡ a (mod 2^16), a subtração é divisível por 2^16 e a divisão
+ *          é uma troca aritmética exata de bits; o valor retornado é
+ *          congruente a a * 2^(-16) módulo q. Sem ramificações.
+ * @param[in] a Produto em 32 bits a ser reduzido.
+ * @return    Congruente a a * 2^(-16) módulo q.
+ * @pre       `a` deve estar no intervalo que garante que a - t*q caiba em
+ *            32 bits (produções de MUL16 por coeficientes de int16_t).
+ */
 static int16_t montgomery_reduce(int32_t a) {
     int16_t t = (int16_t)((int16_t)a * (int16_t)QINV);
     t = (int16_t)((a - (int32_t)t * Q) >> 16);
@@ -47,6 +125,21 @@ static int16_t montgomery_reduce(int32_t a) {
 
 /* CT-REQUIRED: Constant-time conditional move (no branch on b) */
 #ifndef ZUPT_USE_JASMIN
+/**
+ * @brief Cópia condicional por máscara de bits: r := x quando b for 1 (fallback C).
+ * @details Expande o bit menos significativo de `b` na máscara 0x00 ou 0xFF
+ *          e aplica a identidade r ^= mask & (r ^ x) em cada byte. O laço
+ *          percorre `len` bytes independentemente do valor de `b`, e não há
+ *          desvio baseado em `b`; o tempo de execução depende apenas de `len`.
+ * @param[in,out] r   Buffer de destino, atualizado condicionalmente.
+ * @param[in]     x   Buffer de origem, lido integralmente.
+ * @param[in]     len Número de bytes afetados.
+ * @param[in]     b   Seletor: usa apenas o bit menos significativo (0 mantém, 1 copia).
+ * @pre         `r` e `x` têm pelo menos `len` bytes válidos.
+ * @note        Compilada somente quando ZUPT_USE_JASMIN não está definido.
+ *              Quando Jasmin está habilitado, zupt_ct_select_32() assume o
+ *              papel na decapsulação.
+ */
 static void cmov(uint8_t *r, const uint8_t *x, size_t len, uint8_t b) {
     uint8_t mask = -(uint8_t)(b & 1);
     for (size_t i = 0; i < len; i++)
@@ -63,6 +156,20 @@ static void cmov(uint8_t *r, const uint8_t *x, size_t len, uint8_t b) {
 
 /* Precomputed zetas[i] = 17^(BitRev7(i)) * R mod q, where R = 2^16 mod q
  * These are in signed representation [-q/2, q/2] */
+/**
+ * @brief Tabela de raízes da NTT: zetas[i] = 17^BitRev7(i) * R mod q, em forma assinada.
+ * @details Contém os 128 fatores de torção pré-computados usados por ntt(),
+ *          inv_ntt() e poly_basemul(): a raiz primitiva de ordem 256
+ *          zeta = 17 (17^256 ≡ 1 mod 3329) elevada à ordem bit-reversed de 7
+ *          bits, multiplicada pela constante de Montgomery R = 2^16 mod q, e
+ *          armazenada como int16_t. Atenção: 61 das 128 entradas são ≥ q/2
+ *          (= 1665), isto é, resíduos positivos congruentes a negativos — a
+ *          tabela não está toda no intervalo [-q/2, q/2] citado pelo comentário
+ *          adjacente ao código. Os primeiros 64 itens são consumidos pela
+ *          transformada (k cresce em ntt e decresce em inv_ntt) e os últimos
+ *          64, de zetas[64], pelo produto ponto a ponto de basemul. Não contém
+ *          dados secretos.
+ */
 static const int16_t zetas[128] = {
   -1044,  -758,  -359, -1517,  1493,  1422,   287,   202,
    3158,   622,  1577,   182,   962,  2127,  1855,  1468,
@@ -83,6 +190,23 @@ static const int16_t zetas[128] = {
 };
 
 /* CT-REQUIRED: NTT — no secret-dependent array indices */
+/**
+ * @brief Transformada Numérica Teórica direta de 256 pontos, Cooley-Tukey decimada.
+ * @details Percorre os estágios de comprimento len = 128, 64, ..., 2. Em cada
+ *          borboleta calcula t = zeta * r[j+len] por montgomery_reduce(), e
+ *          substitui o par por (r[j] + t, r[j] - t). Ao final, os coeficientes
+ *          estão na base da NTT com um fator de Montgomery R pendente
+ *          (compensado por poly_tomont() ou por basemul).
+ *          Os índices de tabela (`zetas[k++]`) e os limites de laço dependem
+ *          apenas da estrutura fixa de 256 coeficientes, não do conteúdo de
+ *          `r`; não há comparação de dados dentro do laço.
+ * @param[in,out] r Polinômio de 256 coeficientes, transformado in-place.
+ * @post        Os coeficientes ficam na forma NTT desta implementação, na
+ *              ordem de índice usada por poly_basemul(). O fator de escala
+ *          conjunto com inv_ntt() é medido na documentação de inv_ntt():
+ *          inv_ntt(ntt(a)) ≡ 2^16 · a (mod q).
+ * @see         inv_ntt(), poly_basemul()
+ */
 static void ntt(int16_t r[256]) {
     int k = 1;
     for (int len = 128; len >= 2; len >>= 1) {
@@ -99,6 +223,24 @@ static void ntt(int16_t r[256]) {
 
 /* Inverse NTT per reference pqcrystals/kyber — uses SAME zetas table, k counts down.
  * Final scaling by f = 1441 (mont^{-1} * n^{-1} mod q). */
+/**
+ * @brief NTT inversa: reconstrói o polinômio padrão a partir da forma NTT.
+ * @details Executa o esquema de Gentleman-Sande de ponta a cabeça da
+ *          transformada direta (len = 2, 4, ..., 128), consumindo a MESMA
+ *          tabela zetas com k decrescendo de 127. Cada borboleta faz
+ *          r[j] = Barrett(r[j] + r[j+len]) e
+ *          r[j+len] = montgomery(zeta * (r[j+len] - t)). Termina aplicando
+ *          montgomery_reduce(1441 * r[i]) a todos os coeficientes, o que
+ *          equivale a multiplicá-los por 1441 · R^(-1) = 512 mod q.
+ *          O efeito combinado das duas transformadas é
+ *          inv_ntt(ntt(a)) ≡ R · a = 2^16 · a (mod q), medido
+ *          experimentalmente: o resultado fica no domínio de Montgomery
+ *          (semântica "invntt_tomont" da referência pqcrystals/kyber), e não
+ *          no domínio plano. Estrutura de laço fixa; nenhum índice depende
+ *          dos dados.
+ * @param[in,out] r Polinômio de 256 coeficientes na forma NTT, convertido in-place.
+ * @see         ntt()
+ */
 static void inv_ntt(int16_t r[256]) {
     int k = 127;
     for (int len = 2; len <= 128; len <<= 1) {
@@ -120,7 +262,23 @@ static void inv_ntt(int16_t r[256]) {
  * POLYNOMIAL OPERATIONS
  * ═══════════════════════════════════════════════════════════════════ */
 
+/**
+ * @typedef poly
+ * @brief Polinômio de 256 coeficientes int16_t sobre Z_q, com q = 3329.
+ * @details O índice do array corresponde à potência de x; o anel é
+ *          Z_q[x]/(x^256 + 1). Fora das fronteiras de codificação, um
+ *          coeficiente pode ser negativo ou exceder q; apenas poly_reduce(),
+ *          a codificação em bytes e a compressão normalizam o valor.
+ * @see     polyvec, poly_reduce()
+ */
 typedef int16_t poly[256];
+/**
+ * @typedef polyvec
+ * @brief Vetor de MLKEM_K (= 3) polinômios, isto é, um array de poly.
+ * @details Usado para s, e, t_hat, A_hat e u. Sendo poly um typedef de
+ *          array, polyvec é um array de arrays; isso impede a conversão
+ *          multi-nível para const em C11 (ver polyvec_pointwise_acc()).
+ */
 typedef poly polyvec[MLKEM_K];
 
 /* Pointwise multiply in NTT domain (basemul per FIPS 203 §4.4)
@@ -129,6 +287,21 @@ typedef poly polyvec[MLKEM_K];
  * r[0] = fqmul(fqmul(a1,b1), zeta) + fqmul(a0,b0)
  * r[1] = fqmul(a0,b1) + fqmul(a1,b0)
  * Second pair uses -zeta. */
+/**
+ * @brief Produto ponto a ponto de dois pares de coeficientes na NTT (basemul).
+ * @details Bloco elementar do produto de polinômios em NTT (FIPS 203 §4.4):
+ *          calcula o produto no quociente Z_q[x]/(x^2 - zeta). Cada produto
+ *          de coeficientes é uma multiplicação de Montgomery separada, o que
+ *          acumula um fator R^(-1) por chamada. As seis operações são
+ *          executadas sempre, sem comparação sobre os dados.
+ * @param[out] r     Par de coeficientes de saída (2 int16_t).
+ * @param[in]  a     Par de coeficientes do primeiro fator.
+ * @param[in]  b     Par de coeficientes do segundo fator.
+ * @param[in]  zeta  Fator de torção do par; poly_basemul() passa -zeta no
+ *                    segundo par.
+ * @pre       Cada elemento de `a`, `b` e `zeta` cabe em int16_t.
+ * @see       poly_basemul(), montgomery_reduce()
+ */
 static void basemul_pair(int16_t r[2], const int16_t a[2], const int16_t b[2], int16_t zeta) {
     r[0] = montgomery_reduce((int32_t)montgomery_reduce((int32_t)a[1] * b[1]) * zeta);
     r[0] = (int16_t)(r[0] + montgomery_reduce((int32_t)a[0] * b[0]));
@@ -136,6 +309,20 @@ static void basemul_pair(int16_t r[2], const int16_t a[2], const int16_t b[2], i
     r[1] = (int16_t)(r[1] + montgomery_reduce((int32_t)a[1] * b[0]));
 }
 
+/**
+ * @brief Produto de polinômios no domínio da NTT (basemul de 256 coeficientes).
+ * @details Decompõe o anel Z_q[x]/(x^256+1) em 64 sub-anelos de grau 2. Para
+ *          cada bloco i, aplica basemul_pair() com zeta = zetas[64+i] sobre a
+ *          primeira dupla e com -zetas[64+i] sobre a segunda, o que
+ *          corresponde às raízes ±zeta do quociente. O laço percorre sempre
+ *          as 64 posições; nenhum índice depende dos dados.
+ * @param[out] r Resultado em NTT: r = a ∘ b (produto de Montgomery).
+ * @param[in]  a Primeiro fator em NTT.
+ * @param[in]  b Segundo fator em NTT.
+ * @note       O resultado carrega um fator R^(-1) relativo ao produto exato;
+ *             poly_tomont() o compensa quando necessário.
+ * @see        basemul_pair(), poly_tomont()
+ */
 static void poly_basemul(poly r, const poly a, const poly b) {
     for (int i = 0; i < 64; i++) {
         basemul_pair(&r[4*i],   &a[4*i],   &b[4*i],    zetas[64 + i]);
@@ -143,30 +330,69 @@ static void poly_basemul(poly r, const poly a, const poly b) {
     }
 }
 
+/**
+ * @brief Soma dois polinômios coeficiente a coeficiente, sem redução modilar.
+ * @param[out] r Resultado (pode sobrepor a ou b).
+ * @param[in]  a Parcela.
+ * @param[in]  b Parcela.
+ * @note       Não reduz: os resultados podem exceder o intervalo [-Q, Q] e
+ *             precisam de poly_reduce() antes de qualquer serialização.
+ */
 static void poly_add(poly r, const poly a, const poly b) {
     for (int i = 0; i < 256; i++) r[i] = a[i] + b[i];
 }
+
+/**
+ * @brief Subtrai dois polinômios coeficiente a coeficiente, sem redução modilar.
+ * @param[out] r Resultado (pode sobrepor a ou b).
+ * @param[in]  a Minuendo.
+ * @param[in]  b Subtraendo.
+ * @note       Mesmo comportamento de poly_add(): nenhuma redução é aplicada.
+ */
 static void poly_sub(poly r, const poly a, const poly b) {
     for (int i = 0; i < 256; i++) r[i] = a[i] - b[i];
 }
+
+/**
+ * @brief Reduz todos os coeficientes de um polinômio para o intervalo padrão.
+ * @param[in,out] r Polinômio reduzido no lugar.
+ * @see           barrett_reduce()
+ */
 static void poly_reduce(poly r) {
     for (int i = 0; i < 256; i++) r[i] = barrett_reduce(r[i]);
 }
 
-/* Convert polynomial to Montgomery domain: multiply each coeff by R = 2^16 mod Q.
- * Reference: pqcrystals/kyber poly_tomont(). Required after basemul accumulation
- * to compensate for the R^{-1} factor introduced by Montgomery multiplication.
- * f = 2^32 mod Q = 1353, then mont(coeff * f) = coeff * 2^32 / 2^16 = coeff * R */
+/** @brief Constante 2³² mod Q = 1353, usada para levar coeficientes ao domínio de Montgomery. */
 #define TOMONT_CONST 1353  /* 2^32 mod 3329 — verified: 4294967296 mod 3329 = 1353 */
+
+/**
+ * @brief Converte um polinômio para o domínio de Montgomery (multiplica por R = 2¹⁶).
+ * @param[in,out] r Polinômio convertido no lugar.
+ * @details       Aplica mont(r[i]) = r[i] · TOMONT_CONST · R⁻¹ mod Q. Como
+ *                TOMONT_CONST = 2³² mod Q, o resultado é r[i] · 2³² · 2⁻¹⁶ = r[i]·R.
+ *                A compensação é necessária porque poly_basemul() acumula produtos com
+ *                um fator R⁻¹ por multiplicação.
+ * @see           poly_basemul(), montgomery_reduce()
+ */
 static void poly_tomont(poly r) {
     for (int i = 0; i < 256; i++)
         r[i] = montgomery_reduce((int32_t)r[i] * TOMONT_CONST);
 }
 
-/* Polyvec inner product in NTT domain */
+/**
+ * @brief Aplica a NTT direta nos k polinômios de um polyvec.
+ * @param[in,out] pv Polinômios transformados no lugar.
+ * @see           ntt()
+ */
 static void polyvec_ntt(polyvec pv) {
     for (int i = 0; i < MLKEM_K; i++) ntt(pv[i]);
 }
+
+/**
+ * @brief Aplica a NTT inversa nos k polinômios de um polyvec.
+ * @param[in,out] pv Polinômios transformados no lugar.
+ * @see           inv_ntt()
+ */
 static void polyvec_invntt(polyvec pv) {
     for (int i = 0; i < MLKEM_K; i++) inv_ntt(pv[i]);
 }
@@ -174,6 +400,16 @@ static void polyvec_invntt(polyvec pv) {
 /* C11 §6.7.3: arrays-of-arrays cannot undergo multi-level const conversion.
  * Reference pqcrystals/kyber uses non-const polyvec parameters for the same reason.
  * These functions do not modify the input arrays. */
+/**
+ * @brief Acumula o produto interno de dois polyvecs no domínio da NTT.
+ * @param[out] r Resultado: r = Σᵢ basemul(a[i], b[i]), reduzido mod Q.
+ * @param[in]  a Polinômios em NTT (MLKEM_K entradas).
+ * @param[in]  b Polinômios em NTT (MLKEM_K entradas).
+ * @details    Executa poly_basemul() para cada par e soma os resultados com
+ *             poly_add(), que não reduz; por isso poly_reduce() é aplicado no
+ *             final para manter os coeficientes dentro de [-Q, Q].
+ * @see        poly_basemul(), poly_reduce()
+ */
 static void polyvec_pointwise_acc(poly r, polyvec a, polyvec b) {
     poly t;
     poly_basemul(r, a[0], b[0]);
@@ -189,6 +425,17 @@ static void polyvec_pointwise_acc(poly r, polyvec a, polyvec b) {
  * ═══════════════════════════════════════════════════════════════════ */
 
 /* CBD(η=2): sample polynomial from centered binomial distribution */
+/**
+ * @brief Amostra um polinômio da distribuição binomial centrada CBD(η = 2).
+ * @param[out] r   Polinômio amostrado; cada coeficiente fica em [-2, 2].
+ * @param[in]  buf 128 bytes de bytes aleatórios (η·N/4 = 2·256/4).
+ * @details    Processa 4 bits por coeficiente: lê palavras de 32 bits
+ *             (little-endian), soma os pares de bits adjacentes com aritmética
+ *             de máscara (0x55555555) e produz r[i] = a − b, onde a e b são as
+ *             parcelas de 2 bits consecutivas. Nenhum desvio de fluxo depende
+ *             dos dados: os laços percorrem sempre os 32 bytes inteiros.
+ * @see        poly_noise()
+ */
 static void cbd2(poly r, const uint8_t buf[128]) {
     for (int i = 0; i < 256/8; i++) {
         uint32_t t = (uint32_t)buf[4*i] | ((uint32_t)buf[4*i+1] << 8) |
@@ -203,6 +450,20 @@ static void cbd2(poly r, const uint8_t buf[128]) {
 }
 
 /* Sample polynomial uniformly from SHAKE-128 stream (rejection sampling) */
+/**
+ * @brief Amostra um polinômio com distribuição uniforme por rejeição.
+ * @param[out] r    Polinômio resultante com coeficientes em [0, Q−1].
+ * @param[in]  seed Semente de 32 bytes (eta do algoritmo ou seedB).
+ * @param[in]  i    Índice da linha da matriz.
+ * @param[in]  j    Índice da coluna da matriz.
+ * @details    Deriva a semente estendida `seed || i || j` (34 bytes), gera o
+ *             fluxo com SHAKE-128 e agrupa 3 bytes em dois candidatos de 12
+ *             bits (d1 = bits 0–11, d2 = bits 12–23). Candidatos ≥ Q são
+ *             descartados (rejeição). O laço roda até obter os 256
+ *             coeficientes, portanto o número de iterações depende dos dados —
+ *             ver finding sobre o padrão de rejeição.
+ * @see        zupt_shake128_squeeze()
+ */
 static void poly_uniform(poly r, const uint8_t seed[32], uint8_t i, uint8_t j) {
     uint8_t extseed[34];
     memcpy(extseed, seed, 32);
@@ -226,6 +487,15 @@ static void poly_uniform(poly r, const uint8_t seed[32], uint8_t i, uint8_t j) {
 }
 
 /* Sample noise polynomial via PRF (SHAKE-256) + CBD */
+/**
+ * @brief Amostra um polinômio de ruído (eta = 2) via PRF + CBD.
+ * @param[out] r     Polinômio de ruído com coeficientes em [-2, 2].
+ * @param[in]  seed  Semente secreta (d do keygen ou r da cifra).
+ * @param[in]  nonce Byte de domínio que separa cada polinômio amostrado.
+ * @details    Gera 128 bytes com SHAKE-256 sobre `seed || nonce` e aplica
+ *             CBD(η = 2). Uso: s, e no keygen; r, e₁, e₂ na cifra.
+ * @see        cbd2()
+ */
 static void poly_noise(poly r, const uint8_t seed[32], uint8_t nonce) {
     uint8_t extseed[33];
     memcpy(extseed, seed, 32);
@@ -240,6 +510,14 @@ static void poly_noise(poly r, const uint8_t seed[32], uint8_t nonce) {
  * ═══════════════════════════════════════════════════════════════════ */
 
 /* Encode polynomial with d bits per coefficient */
+/**
+ * @brief Serializa um polinômio em 12 bits por coeficiente (ByteEncode₁₂).
+ * @param[out] r Buffer de saída com 384 bytes (3 bytes por par de coeficientes).
+ * @param[in]  a Polinômio de entrada.
+ * @details    Normaliza cada coeficiente para [0, Q−1] com `((x % Q) + Q) % Q`
+ *             e empacota dois valores de 12 bits little-endian em 3 bytes.
+ * @see        poly_frombytes()
+ */
 static void poly_tobytes(uint8_t *r, const poly a) {
     /* 12 bits per coefficient, 256 coeffs = 384 bytes */
     for (int i = 0; i < 256/2; i++) {
@@ -251,6 +529,14 @@ static void poly_tobytes(uint8_t *r, const poly a) {
     }
 }
 
+/**
+ * @brief Reconstrói um polinômio a partir de ByteEncode₁₂ (384 bytes).
+ * @param[out] r Polinômio reconstruído; coeficientes em [0, 4095].
+ * @param[in]  a Buffer de entrada com 384 bytes.
+ * @note       Não valida nem reduz: valores acima de Q são preservados como
+ *             vieram do buffer, comportamento esperado do ByteDecode₁₂.
+ * @see        poly_tobytes()
+ */
 static void poly_frombytes(poly r, const uint8_t *a) {
     for (int i = 0; i < 256/2; i++) {
         r[2*i]   = (int16_t)(((uint16_t)a[3*i] | ((uint16_t)(a[3*i+1] & 0x0F) << 8)));
@@ -259,6 +545,18 @@ static void poly_frombytes(poly r, const uint8_t *a) {
 }
 
 /* Compress: round(2^d / q * x) mod 2^d */
+/**
+ * @brief Comprime um polinômio para d bits por coeficiente (Compress_q,ₔ).
+ * @param[out] r Buffer de saída: 320 bytes com d = 10, 128 bytes com d = 4.
+ * @param[in]  a Polinômio de entrada.
+ * @param[in]  d Número de bits por coeficiente. Apenas 10 (componente u) e
+ *              4 (componente v) são suportados.
+ * @details    Aplica `round(2^d·x / Q) mod 2^d` com arredondamento "round half up"
+ *             implementado como `(x·2^d + Q/2) / Q`, após normalizar x para
+ *             [0, Q−1]. Se d não for 10 nem 4, a função não escreve nada no
+ *             buffer de saída (nenhum else cobre outros valores).
+ * @see        poly_decompress()
+ */
 static void poly_compress(uint8_t *r, const poly a, int d) {
     if (d == 10) {
         /* 10 bits per coeff, 256 coeffs = 320 bytes */
@@ -289,6 +587,17 @@ static void poly_compress(uint8_t *r, const poly a, int d) {
     }
 }
 
+/**
+ * @brief Descomprime d bits por coeficiente de volta ao anel Z_q (Decompress_q,ₔ).
+ * @param[out] r Polinômio reconstruído.
+ * @param[in]  a Buffer de entrada: 320 bytes com d = 10, 128 bytes com d = 4.
+ * @param[in]  d Bits por coeficiente; apenas 10 e 4 são suportados.
+ * @details    Reconstrói com `(t·Q + 2^(d−1)) >> d`, o que aproxima t de `round(t·Q/2^d)`.
+ *             Os valores resultantes não são exatamente os originais — apenas o
+ *             intervalo aproximado é preservado, que é o objetivo da compressão.
+ * @warning    Para d ≠ 10 e d ≠ 4 nenhum coeficiente é escrito (ausência de else).
+ * @see        poly_compress()
+ */
 static void poly_decompress(poly r, const uint8_t *a, int d) {
     if (d == 10) {
         for (int i = 0; i < 256/4; i++) {
@@ -309,15 +618,42 @@ static void poly_decompress(poly r, const uint8_t *a, int d) {
 }
 
 /* Polyvec encode/decode (12 bits per coeff) */
+/**
+ * @brief Serializa os k polinômios de um polyvec em 384·k bytes (12 bits por coeficiente).
+ * @param[out] r Buffer de saída (MLKEM_K·384 bytes).
+ * @param[in]  a Polyvec de entrada.
+ * @see        poly_tobytes()
+ */
 static void polyvec_tobytes(uint8_t *r, polyvec a) {
     for (int i = 0; i < MLKEM_K; i++) poly_tobytes(r + i*384, a[i]);
 }
+
+/**
+ * @brief Reconstrói um polyvec a partir de 384·k bytes serializados.
+ * @param[out] r Polyvec reconstruído.
+ * @param[in]  a Buffer de entrada (MLKEM_K·384 bytes).
+ * @see        poly_frombytes()
+ */
 static void polyvec_frombytes(polyvec r, const uint8_t *a) {
     for (int i = 0; i < MLKEM_K; i++) poly_frombytes(r[i], a + i*384);
 }
+
+/**
+ * @brief Comprime um polyvec com MLKEM_DU (10) bits por coeficiente.
+ * @param[out] r Buffer de saída (MLKEM_K·320 bytes = 1280 bytes para k = 4).
+ * @param[in]  a Polyvec de entrada (componente u da cifra).
+ * @see        poly_compress()
+ */
 static void polyvec_compress(uint8_t *r, polyvec a) {
     for (int i = 0; i < MLKEM_K; i++) poly_compress(r + i*320, a[i], MLKEM_DU);
 }
+
+/**
+ * @brief Descomprime um polyvec comprimido com MLKEM_DU (10) bits por coeficiente.
+ * @param[out] r Polyvec reconstruído.
+ * @param[in]  a Buffer de entrada (MLKEM_K·320 bytes = 1280 bytes para k = 4).
+ * @see        poly_decompress()
+ */
 static void polyvec_decompress(polyvec r, const uint8_t *a) {
     for (int i = 0; i < MLKEM_K; i++) poly_decompress(r[i], a + i*320, MLKEM_DU);
 }
@@ -327,6 +663,21 @@ static void polyvec_decompress(polyvec r, const uint8_t *a) {
  * ═══════════════════════════════════════════════════════════════════ */
 
 /* Generate K-PKE keypair. d = random 32-byte seed. */
+/**
+ * @brief Gera o par de chaves do esquema K-PKE subjacente (FIPS 203 §6.10).
+ * @param[out] pk      Chave pública K-PKE: 1184 bytes (k·384 de t̂ em NTT + 32 de ρ).
+ * @param[out] sk_pke Chave secreta K-PKE: 1152 bytes (k·384 de ŝ serializados em NTT).
+ * @param[in]  d      Semente de 32 bytes (aleatória ou derivada pelo encapsulamento).
+ * @details    Deriva `G(d ‖ k)` com SHA3-512, obtendo ρ (semente da matriz) e σ
+ *             (semente de ruído). A matriz Â é amostrada por rejeição com
+ *             `Uniform(ρ, j, i)` — índices trocados de propósito, porque a cifra
+ *             consome Aᵀ e precisa regerar exatamente os mesmos coeficientes.
+ *             Depois: ŝ, ê ← CBD(η=2) com σ (nonces 0..k−1 e k..2k−1),
+ *             t̂ = Â∘ŝ + ê, sendo poly_tomont() aplicado após o acumulador para
+ *             compensar o fator R⁻¹ da multiplicação de Montgomery.
+ * @post       buf, s e e são limpos com zupt_secure_wipe() antes do retorno.
+ * @see        poly_uniform(), poly_noise(), polyvec_pointwise_acc(), poly_tomont()
+ */
 static void kpke_keygen(uint8_t pk[1184], uint8_t sk_pke[1152], const uint8_t d[32]) {
     uint8_t buf[64];
     /* G(d ‖ k) */
@@ -382,6 +733,25 @@ static void kpke_keygen(uint8_t pk[1184], uint8_t sk_pke[1152], const uint8_t d[
 }
 
 /* K-PKE encrypt: encrypt message m (32 bytes) under pk with randomness r (32 bytes) */
+/**
+ * @brief Cifra K-PKE (FIPS 203 §6.11): 32 bytes de mensagem sob uma chave pública.
+ * @param[out] ct    Texto cifrado: 1088 bytes (k·320 de u comprimido + 32 de v).
+ * @param[in]  pk    Chave pública K-PKE (1184 bytes: t̂ serializado + ρ).
+ * @param[in]  m     Mensagem de 32 bytes (bits de mensagem no esquema CCA).
+ * @param[in]  r     Randomness de 32 bytes usada pelo PRF (nonces 0..2k).
+ * @param[in]  legacy Quando ≠ 0, gera Aᵀ com os índices trocados
+ *                    `Uniform(ρ, j, i)` em vez do padrão desta versão.
+ * @details    Regera Â a partir de ρ, amostra r̂, ê₁, ê₂ por CBD(η=2) e calcula
+ *             u = NTT⁻¹(Âᵀ∘r̂) + ê₁ e v = NTT⁻¹(t̂ᵀ∘r̂) + ê₂ + Decompress(m, 1),
+ *             com Decompress₁(mapeando cada bit para (Q+1)/2 = 1665).
+ *             Antes da serialização aplica poly_reduce() e comprima u com 10 bits
+ *             e v com 4 bits.
+ * @warning    O parâmetro @p legacy muda a ordem dos índices usados para amostrar
+ *             a matriz, produzindo cifrastes incompatíveis com o caminho padrão.
+ *             Ver finding registrado para esta linha.
+ * @post       r_vec, e1 e e2 são limpos com zupt_secure_wipe() antes do retorno.
+ * @see        kpke_keygen(), kpke_decrypt(), polyvec_compress()
+ */
 static void kpke_encrypt(uint8_t ct[1088], const uint8_t pk[1184],
                           const uint8_t m[32], const uint8_t r[32], int legacy) {
     /* Decode pk */
@@ -445,6 +815,19 @@ static void kpke_encrypt(uint8_t ct[1088], const uint8_t pk[1184],
 }
 
 /* K-PKE decrypt */
+/**
+ * @brief Decifra K-PKE (FIPS 203 §6.12) e recupera os 32 bytes da mensagem.
+ * @param[out] m     Mensagem recuperada (32 bytes, um bit por coeficiente).
+ * @param[in]  ct    Texto cifrado: 1088 bytes (k·320 de u + 32 de v).
+ * @param[in]  sk_pke Chave secreta K-PKE: 1152 bytes (k·384 de ŝ serializados).
+ * @details    Descomprime u (10 bits) e v (4 bits), aplica NTT em u, acumula
+ *             ŝ∘û, volta com inv_ntt() e calcula w = v − ŝᵀ·û. Cada coeficiente é
+ *             convertido em bit pelo arredondamento `round(2·x/Q)` — o bit mais
+ *             próximo de 0 ou Q/2. Nenhum teste de integridade é feito: o valor
+ *             retornado é simplesmente o resultado da decifração algébrica.
+ * @post       s_hat é limpo com zupt_secure_wipe() antes do retorno.
+ * @see        kpke_encrypt(), polyvec_decompress()
+ */
 static void kpke_decrypt(uint8_t m[32], const uint8_t ct[1088],
                           const uint8_t sk_pke[1152]) {
     polyvec u;
@@ -488,6 +871,22 @@ static void kpke_decrypt(uint8_t m[32], const uint8_t ct[1088],
   @ ensures \result == 0 ==> \initialized(pk + (0..1183));
   @ ensures \result == 0 ==> \initialized(sk + (0..2399));
 */
+/**
+ * @brief Valida a estrutura de uma chave pública ML-KEM-768.
+ * @param[in] pk Buffer de 1184 bytes a validar.
+ * @retval  0 Chave estruturalmente válida.
+ * @retval -1 Ponteiro nulo ou pelo menos um coeficiente fora do intervalo.
+ * @details Percorre os 1152 bytes do bloco t̂ em pares de 12 bits e acumula, em
+ *          `invalid`, o resultado de testar cada valor contra Q (3329). Só a
+ *          parte de t̂ é verificada: os 32 bytes finais (ρ) são uma semente
+ *          arbitrária e não passam por nenhum teste. A comparação é feita por
+ *          acumulação de bits em vez de `return` imediato, para não revelar
+ *          em qual posição a chave foi rejeitada.
+ * @note    O bloco ACSL que aparece acima desta função no código descreve a
+ *          geração de chaves (`assigns pk, sk`), não esta verificação — ver
+ *          finding registrado para este ponto.
+ * @see     zupt_mlkem768_keygen()
+ */
 int zupt_mlkem768_public_key_check(const uint8_t pk[1184]) {
     if (!pk) return -1;
     /* FIPS 203 Algorithm 20: ByteEncode_12(ByteDecode_12(ek)) == ek. */
@@ -500,6 +899,20 @@ int zupt_mlkem768_public_key_check(const uint8_t pk[1184]) {
     return invalid ? -1 : 0;
 }
 
+/**
+ * @brief Valida o vínculo entre a chave pública embutida e a chave secreta.
+ * @param[in] sk Buffer de 2400 bytes a validar.
+ * @retval  0 Vínculo confere (a chave é estruturalmente íntegra).
+ * @retval -1 Ponteiro nulo ou hash divergente.
+ * @details Recomputa SHA3-256 sobre o bloco de chave pública armazenado em
+ *          `sk[1152..2335]` (1184 bytes) e compara os 32 bytes resultantes com
+ *          `sk[2336..2367]`. A comparação acumula XOR (`diff`) para percorrer os
+ *          32 bytes por completo. Nada é apagado em caso de falha: a função é
+ *          apenas uma verificação e não altera o buffer.
+ * @note    Não confere os 32 bytes finais de `z` (sk[2368..2399]) — apenas o
+ *          vínculo H(ek) descrito acima.
+ * @see     zupt_mlkem768_keygen()
+ */
 int zupt_mlkem768_secret_key_check(const uint8_t sk[2400]) {
     if (!sk) return -1;
     uint8_t h[32], diff = 0;
@@ -509,6 +922,19 @@ int zupt_mlkem768_secret_key_check(const uint8_t sk[2400]) {
     return diff ? -1 : 0;
 }
 
+/**
+ * @brief Gera o par de chaves ML-KEM-768 a partir de duas sementes explícitas.
+ * @param[out] pk Chave pública: 1184 bytes (t̂ serializado + ρ).
+ * @param[out] sk Chave secreta: 2400 bytes (sk_pke ‖ pk ‖ H(pk) ‖ z).
+ * @param[in]  d  Semente de 32 bytes que deriva ρ e σ do K-PKE.
+ * @param[in]  z  Semente de 32 bytes usada no encapsulamento (transformação FO).
+ * @retval 0 Sempre (não há caminho de erro nesta função interna).
+ * @details Monta exatamente a codificação de chave secreta da FIPS 203:
+ *          sk_pke (1152) ‖ ek (1184) ‖ H(ek) (32) ‖ z (32). O bloco H(ek) é o
+ *          verificado por zupt_mlkem768_secret_key_check().
+ * @post    sk_pke é limpo com zupt_secure_wipe() antes do retorno.
+ * @see     kpke_keygen(), zupt_mlkem768_secret_key_check()
+ */
 static int mlkem_keygen_internal(uint8_t pk[1184], uint8_t sk[2400],
                                  const uint8_t d[32], const uint8_t z[32]) {
     uint8_t sk_pke[1152];
@@ -521,6 +947,19 @@ static int mlkem_keygen_internal(uint8_t pk[1184], uint8_t sk[2400],
     return 0;
 }
 
+/**
+ * @brief Gera um par de chaves ML-KEM-768 com aleatoriedade do sistema.
+ * @param[out] pk Chave pública: 1184 bytes.
+ * @param[out] sk Chave secreta: 2400 bytes (sk_pke ‖ pk ‖ H(pk) ‖ z).
+ * @retval  0 Chaves geradas com sucesso.
+ * @retval -1 Pelo menos um dos ponteiros recebidos é nulo.
+ * @details Obtém duas sementes de 32 bytes via zupt_random_bytes() e delega a
+ *          mlkem_keygen_internal().
+ * @post    d e z são limpos com zupt_secure_wipe() antes de qualquer retorno
+ *          (inclusive na rota de erro, que ocorre antes do wipe — nesse caso
+ *          os buffers ainda não haviam sido preenchidos).
+ * @see     mlkem_keygen_internal(), zupt_mlkem768_secret_key_check()
+ */
 int zupt_mlkem768_keygen(uint8_t pk[1184], uint8_t sk[2400]) {
     if (!pk || !sk) return -1;
     uint8_t d[32], z[32];
@@ -532,6 +971,21 @@ int zupt_mlkem768_keygen(uint8_t pk[1184], uint8_t sk[2400]) {
     return ret;
 }
 
+/**
+ * @brief Encapsulamento ML-KEM-768 com mensagem explícita (algoritmo interno).
+ * @param[out] ct Texto cifrado: 1088 bytes.
+ * @param[out] ss Segredo compartilhado: 32 bytes (ko, a primeira metade de G).
+ * @param[in]  pk Chave pública: 1184 bytes.
+ * @param[in]  m  Mensagem de 32 bytes que determina a aleatoriedade.
+ * @retval  0 Segredo encapsulado com sucesso.
+ * @retval -1 Chave pública rejeitada pela validação estrutural.
+ * @details Calcula `input = m ‖ H(pk)` (H = SHA3-256) e `kr = SHA3-512(input)`.
+ *          A primeira metade de kr é o segredo compartilhado devolvido e a segunda
+ *          metade é a randomness passada a kpke_encrypt() com o caminho padrão
+ *          (`legacy = 0`). Não há KDF final: o segredo é kr[0..31] diretamente.
+ * @post    input e kr são limpos com zupt_secure_wipe() em todos os retornos.
+ * @see     kpke_encrypt(), zupt_mlkem768_encaps()
+ */
 static int mlkem_encaps_internal(uint8_t ct[1088], uint8_t ss[32],
                                  const uint8_t pk[1184], const uint8_t m[32]) {
     if (zupt_mlkem768_public_key_check(pk) != 0) return -1;
@@ -547,6 +1001,20 @@ static int mlkem_encaps_internal(uint8_t ct[1088], uint8_t ss[32],
     return 0;
 }
 
+/**
+ * @brief Encapsula um segredo de 32 bytes sob uma chave pública ML-KEM-768.
+ * @param[out] ct Texto cifrado: 1088 bytes (k·320 de u + 32 de v).
+ * @param[out] ss Segredo compartilhado: 32 bytes, sempre diferente de tudo que
+ *                a decifração com a chave correta não devolve.
+ * @param[in]  pk Chave pública: 1184 bytes.
+ * @retval  0 Segredo encapsulado com sucesso.
+ * @retval -1 Algum ponteiro é nulo ou a chave pública falha na validação
+ *           estrutural (zupt_mlkem768_public_key_check).
+ * @details Gera uma mensagem m de 32 bytes com zupt_random_bytes() e a usa como
+ *          entropia do encapsulamento; m é apagada antes do retorno.
+ * @post    m é limpa com zupt_secure_wipe() antes do retorno.
+ * @see     zupt_mlkem768_decaps(), mlkem_encaps_internal()
+ */
 int zupt_mlkem768_encaps(uint8_t ct[1088], uint8_t ss[32],
                         const uint8_t pk[1184]) {
     if (!ct || !ss || !pk || zupt_mlkem768_public_key_check(pk) != 0) return -1;
@@ -559,6 +1027,32 @@ int zupt_mlkem768_encaps(uint8_t ct[1088], uint8_t ss[32],
 
 /* legacy is a public format selector, never a secret-dependent decision.
  * The legacy path exists only for explicit, authenticated-digest migration. */
+/**
+ * @brief Decapsulamento ML-KEM-768 (transformação Fujisaki–Okamoto).
+ * @param[out] ss Segredo compartilhado: 32 bytes.
+ * @param[in]  ct Texto cifrado: 1088 bytes.
+ * @param[in]  sk Chave secreta: 2400 bytes (sk_pke ‖ pk ‖ H(pk) ‖ z).
+ * @param[in]  legacy Seletor de formato público (0 = FIPS 203, ≠0 = formato legado).
+ * @retval  0 Sempre, inclusive na rejeição implícita — neste caso @p ss recebe o
+ *           segredo de rejeição e não há distinção observável de falha.
+ * @retval -1 Algum ponteiro é nulo, ou (no caminho não legado) a chave secreta
+ *           falha em zupt_mlkem768_secret_key_check().
+ * @details Decifra ct para m, recomputa `kr = SHA3-512(m ‖ H(pk))` e re-cifra m
+ *          com a randomness kr[32..63]. A igualdade ct == ct' é acumulada em
+ *          `diff` (varredura completa, sem saída antecipada) e convertida na
+ *          máscara `fail` por aritmética sem sinal: `(diff | −diff) >> 31` vale
+ *          0xFF quando há divergência.
+ *          Caminho não legado: segredo bom = kr[0..31]; segredo de rejeição =
+ *          SHAKE-256(z ‖ ct), isto é, J(z ‖ c) da FIPS 203 (não J(z ‖ H(c))).
+ *          Caminho legado: bom = SHAKE-256(ko ‖ H(ct)); rejeição = SHAKE-256(z).
+ *          A escolha entre bom e rejeição usa máscara: zupt_ct_select_32() sob
+ *          ZUPT_USE_JASMIN, ou memcpy + cmov() com `1 − fail` caso contrário.
+ * @note     O parâmetro @p legacy é um seletor de formato exposto na fronteira,
+ *           não um dado secreto; não há decisão secreta dependente de ramo.
+ * @post     m, input, kr, check_ct, good, reject, reject_input, diff e fail são
+ *           limpos com zupt_secure_wipe() antes do retorno.
+ * @see      zupt_mlkem768_decaps(), zupt_legacy_mlkem768_decaps(), cmov(), zupt_ct_select_32()
+ */
 static int mlkem_decaps_internal(uint8_t ss[32], const uint8_t ct[1088],
                                  const uint8_t sk[2400], int legacy) {
     if (!ss || !ct || !sk) return -1;
@@ -609,12 +1103,38 @@ static int mlkem_decaps_internal(uint8_t ss[32], const uint8_t ct[1088],
     return 0;
 }
 
+/**
+ * @brief Decapsula um texto cifrado ML-KEM-768 no formato atual (FIPS 203).
+ * @param[out] ss Segredo compartilhado: 32 bytes. Em rejeição implícita, o
+ *                segredo derivado de `J(z ‖ ct)` — não há código de erro.
+ * @param[in]  ct Texto cifrado: 1088 bytes.
+ * @param[in]  sk Chave secreta: 2400 bytes.
+ * @retval  0 Processado (inclusive quando o cifraste é inválido — rejeição
+ *           implícita, sem distinção observável).
+ * @retval -1 Ponteiro nulo ou chave secreta estruturalmente inválida.
+ * @see      mlkem_decaps_internal()
+ */
 int zupt_mlkem768_decaps(uint8_t ss[32], const uint8_t ct[1088],
                         const uint8_t sk[2400]) {
     return mlkem_decaps_internal(ss, ct, sk, 0);
 }
 
-/* Internal symbol: not declared in the installed public interface. */
+/**
+ * @brief Decapsula um texto cifrado no formato legado de ML-KEM-768.
+ * @param[out] ss Segredo compartilhado: 32 bytes. No caminho legado o segredo
+ *                "bom" é SHAKE-256(ko ‖ H(ct)) e a rejeição é SHAKE-256(z).
+ * @param[in]  ct Texto cifrado legado: 1088 bytes amostrados com a ordem de
+ *                índices antiga da matriz Aᵀ (ver kpke_encrypt()).
+ * @param[in]  sk Chave secreta: 2400 bytes. A validação estrutural é ignorada
+ *                neste caminho.
+ * @retval  0 Sempre que os ponteiros forem válidos.
+ * @retval -1 Algum ponteiro é nulo.
+ * @warning Existe apenas para migração autenticada de arquivos antigos; o
+ *          formato legado não é compatível com o cifraste produzido por
+ *          zupt_mlkem768_encaps().
+ * @note    Símbolo interno: não declarado na interface pública instalada.
+ * @see      mlkem_decaps_internal(), kpke_encrypt()
+ */
 int zupt_legacy_mlkem768_decaps(uint8_t ss[32], const uint8_t ct[1088],
                                const uint8_t sk[2400]) {
     return mlkem_decaps_internal(ss, ct, sk, 1);
@@ -622,10 +1142,33 @@ int zupt_legacy_mlkem768_decaps(uint8_t ss[32], const uint8_t ct[1088],
 
 #ifdef ZUPT_TESTING
 /* Deterministic ACVP entry points are compiled only into the test executable. */
+/**
+ * @brief Ponto de entrada determinístico de keygen para vetores ACVP.
+ * @param[out] pk Chave pública: 1184 bytes.
+ * @param[out] sk Chave secreta: 2400 bytes.
+ * @param[in]  d  Semente d fornecida pelo vetor (32 bytes).
+ * @param[in]  z  Semente z fornecida pelo vetor (32 bytes).
+ * @retval 0 Sempre (delegação direta a mlkem_keygen_internal).
+ * @note   Compilado somente com ZUPT_TESTING definido; consumido por
+ *         scripts/check-acvp.py.
+ * @see    mlkem_keygen_internal()
+ */
 int zupt_test_mlkem_keygen(uint8_t pk[1184], uint8_t sk[2400],
                           const uint8_t d[32], const uint8_t z[32]) {
     return mlkem_keygen_internal(pk, sk, d, z);
 }
+
+/**
+ * @brief Ponto de entrada determinístico de encapsulamento para vetores ACVP.
+ * @param[out] ct Texto cifrado: 1088 bytes.
+ * @param[out] ss Segredo compartilhado: 32 bytes.
+ * @param[in]  pk Chave pública: 1184 bytes.
+ * @param[in]  m  Mensagem do vetor (32 bytes), em lugar da aleatoriedade.
+ * @retval  0 Encapsulado com sucesso.
+ * @retval -1 Chave pública rejeitada pela validação estrutural.
+ * @note   Compilado somente com ZUPT_TESTING definido.
+ * @see    mlkem_encaps_internal()
+ */
 int zupt_test_mlkem_encaps(uint8_t ct[1088], uint8_t ss[32],
                           const uint8_t pk[1184], const uint8_t m[32]) {
     return mlkem_encaps_internal(ct, ss, pk, m);
@@ -636,6 +1179,23 @@ int zupt_test_mlkem_encaps(uint8_t ct[1088], uint8_t ss[32],
  * SELF-TEST — verify internal operations
  * ═══════════════════════════════════════════════════════════════════ */
 
+/**
+ * @brief Autoteste das operações internas de ML-KEM-768.
+ * @retval  0 Todas as verificações passaram.
+ * @retval -1 Pelo menos uma verificação falhou (detalhes impressos em stderr).
+ * @details Executa três verificações independentes:
+ *          1. Idempotência da NTT: aplica ntt() e inv_ntt() sobre um polinômio
+ *             determinístico (`a[i] = i·17 mod Q`) e compara `montgomery_reduce(b[i])`
+ *             com `a[i]`, compensando o fator de Montgomery residual do par de
+ *             transformadas.
+ *          2. Ciclo K-PKE: kpke_keygen → kpke_encrypt → kpke_decrypt com
+ *             aleatoriedade do sistema, exigindo m == m′.
+ *          3. Ciclo KEM completo: keygen → encaps → decaps, exigindo ss == ss′.
+ * @note    Comporta-se como teste: usa saída antecipada (`break`/`return`) e
+ *          imprime em stderr, o que não seria aceitável em código criptográfico
+ *          em execução normal.
+ * @see     zupt_mlkem768_encaps(), zupt_mlkem768_decaps()
+ */
 int zupt_mlkem768_selftest(void) {
     int ok = 1;
 

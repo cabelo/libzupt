@@ -1,7 +1,31 @@
 /* SPDX-License-Identifier: MIT */
+/**
+ * @file  libzupt_version.h
+ * @brief Constante de versão da biblioteca, lida pelo CMake.
+ * @details Este é o cabeçalho instalado (ver `install(FILES ...)` no
+ *          CMakeLists.txt) e a fonte canônica usada pelo CMakeLists.txt para
+ *          derivar `PROJECT_VERSION`, `SOVERSION` e o nome do pacote.
+ *          O CMake extrai o valor com uma expressão regular aplicada à linha
+ *          a linha que define `LIBZUPT_VERSION_STRING`, de modo que a macro precisa
+ *          permanecer no início da linha e conter exatamente "major.minor.patch".
+ *
+ * @note A árvore do repositório contém três versões divergentes registradas em
+ *       lugares diferentes: `LIBZUPT_VERSION_STRING` (aqui, "1.0.15"),
+ *       `ZUPT_VERSION_STRING` em include/zupt.h ("2.1.5") e "2.0.0" no
+ *       README.md e no CHANGES.md. Esta documentação descreve os valores como
+ *       estão; a divergência está registrada como pendência e não foi
+ *       harmonizada.
+ * @see ZUPT_VERSION_STRING
+ */
 #ifndef LIBZUPT_VERSION_H
 #define LIBZUPT_VERSION_H
 
+/**
+ * @def LIBZUPT_VERSION_STRING
+ * @brief Versão da biblioteca no formato "major.minor.patch".
+ * @details Usada pelo CMakeLists.txt como `PROJECT_VERSION` e, portanto,
+ *          como `SOVERSION` (major) da biblioteca compartilhada `libzupt`.
+ */
 #define LIBZUPT_VERSION_STRING "1.0.15"
 
 #endif

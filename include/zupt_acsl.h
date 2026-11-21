@@ -5,6 +5,37 @@
  * Usage: frama-c -wp -wp-rte -wp-model Typed+Cast
  *        -cpp-extra-args="-Iinclude -Isrc" src/zupt_crypto.c
  */
+/**
+ * @file  zupt_acsl.h
+ * @brief Predicados ACSL personalizados para verificação com Frama-C/WP.
+ * @details Este cabeçalho declara apenas predicados ACSL, usados como
+ *          vocabulário comum nas anotações dos módulos criptográficos
+ *          (por exemplo src/zupt_sha256.c e src/zupt_crypto.c). Nada aqui
+ *          afeta a compilação normal: todo o conteúdo está protegido por
+ *          a condição de pré-processador sobre `__FRAMAC__`, que é definido somente pelo pré-processador
+ *          do Frama-C; em um compilador C comum o cabeçalho expande para nada,
+ *          além do próprio guarda de inclusão.
+ *
+ *          O conteúdo (preservado literalmente na documentação, pois pertence
+ *          ao contrato formal) define:
+ *          - `ValidBuffer(p, n)`: as n bytes a partir de `p` são legíveis e
+ *            inicializadas.
+ *          - `ValidWriteBuffer(p, n)`: as n bytes a partir de `p` são
+ *            endereços graváveis.
+ *          - `Separated2(a, an, b, bn)`: as duas regiões não se sobrepõem.
+ *          - `KeyWiped(k, n)`: todos os n bytes de `k` valem zero no local L.
+ *          - `ValidKey(k, n)`: `ValidBuffer(k, n)` e `n == 32`.
+ *          - `ConstantTimeCompare(a, b, n)`: todas as n bytes de cada buffer
+ *            estão inicializadas (predicado de bem-formado; não expressa, por
+ *            si, custo constante de tempo).
+ *          - `MACValid(mac)`: `ValidBuffer(mac, 32)`.
+ *
+ * @note Para executar a verificação, use a linha de comando indicada no
+ *       cabeçalho original:
+ *       `frama-c -wp -wp-rte -wp-model Typed+Cast -cpp-extra-args="-Iinclude -Isrc" src/zupt_crypto.c`.
+ *       Essa verificação não foi executada nesta revisão de documentação.
+ * @see ZUPT_USE_JASMIN
+ */
 #ifndef ZUPT_ACSL_H
 #define ZUPT_ACSL_H
 

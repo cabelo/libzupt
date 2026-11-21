@@ -3,10 +3,41 @@
  * Pure C implementation, no dependencies.
  * FRAMA-C: ACSL-annotated (v2.0.0)
  */
+/**
+ * @file  zupt_sha256.c
+ * @brief Implementacao portatil (C puro) de SHA-256, conforme FIPS 180-4.
+ * @details O modulo calcula o digest SHA-256 (sempre 32 bytes) de mensagens de
+ *          qualquer tamanho, de uma so vez (zupt_sha256) ou de forma
+ *          incremental (zupt_sha256_init + zupt_sha256_update +
+ *          zupt_sha256_final).
+ *
+ *          Internamente segue a estrutura Merkle-Damgard: a mensagem e
+ *          particionada em blocos de 64 bytes, cada um processado por
+ *          sha256_transform() em 64 rodadas sobre palavras de 32 bits.
+ *          Todas as leituras de dados de entrada e a gravacao do digest e do
+ *          comprimento em bits usam ordem big-endian, de modo que o resultado
+ *          nao depende da endianidade da maquina.
+ *
+ *          O campo c->count acumula o total de bytes absorvidos;
+ *          zupt_sha256_final() converte para bits (count * 8) e por isso o
+ *          contrato ACSL da funcao de uma passada limita n a
+ *          0xFFFFFFFFFFFFFFFF / 8, para que essa multiplicacao nao estoure.
+ *
+ *          Nao ha dependencias externas alem da libc (string.h). As anotacoes
+ *          ACSL deste arquivo (comentarios especiais no estilo Frama-C) servem
+ *          apenas para verificacao formal e nao alteram o codigo compilado.
+ */
 #include "zupt.h"
 #include "zupt_acsl.h"
 #include <string.h>
 
+/**
+ * @brief Constantes de rodada K[t] do SHA-256 (FIPS 180-4, secao 4.2.2.3).
+ * @details 64 valores de 32 bits correspondentes aos 32 bits mais
+ *          significativos da parte fracionaria das raizes cubicas dos 64
+ *          primeiros numeros primos. Usadas em cada rodada t de
+ *          sha256_transform().
+ */
 static const uint32_t K[64] = {
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
     0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
@@ -18,21 +49,96 @@ static const uint32_t K[64] = {
     0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2,
 };
 
+/**
+ * @def RR(x,n)
+ * @brief Rotação circular à direita de uma palavra de 32 bits.
+ * @param[in] x Valor de 32 bits a rotacionar.
+ * @param[in] n Quantidade de posicoes de rotacao (usado aqui com n entre 2 e 25).
+ * @return Palavra rotacionada.
+ */
 #define RR(x,n) (((x)>>(n))|((x)<<(32-(n))))
+/**
+ * @def CH(x,y,z)
+ * @brief Funcao de escolha Ch(x,y,z) do SHA-256 (FIPS 180-4, secao 4.1.2).
+ * @param[in] x Primeiro operando de 32 bits.
+ * @param[in] y Segundo operando de 32 bits.
+ * @param[in] z Terceiro operando de 32 bits.
+ * @return (x AND y) XOR ((NOT x) AND z).
+ */
 #define CH(x,y,z)  (((x)&(y))^((~(x))&(z)))
+/**
+ * @def MAJ(x,y,z)
+ * @brief Funcao de maiorias Maj(x,y,z) do SHA-256 (FIPS 180-4, secao 4.1.3).
+ * @param[in] x Primeiro operando de 32 bits.
+ * @param[in] y Segundo operando de 32 bits.
+ * @param[in] z Terceiro operando de 32 bits.
+ * @return (x AND y) XOR (x AND z) XOR (y AND z).
+ */
 #define MAJ(x,y,z) (((x)&(y))^((x)&(z))^((y)&(z)))
+/**
+ * @def EP0(x)
+ * @brief Sigma grande 0 (funcao de compressao) do SHA-256.
+ * @param[in] x Palavra de 32 bits.
+ * @return RR(x,2) XOR RR(x,13) XOR RR(x,22).
+ */
 #define EP0(x) (RR(x,2)^RR(x,13)^RR(x,22))
+/**
+ * @def EP1(x)
+ * @brief Sigma grande 1 (funcao de expansao) do SHA-256.
+ * @param[in] x Palavra de 32 bits.
+ * @return RR(x,6) XOR RR(x,11) XOR RR(x,25).
+ */
 #define EP1(x) (RR(x,6)^RR(x,11)^RR(x,25))
+/**
+ * @def SG0(x)
+ * @brief Sigma pequeno 0 da expansao da mensagem (FIPS 180-4, secao 4.1.5).
+ * @param[in] x Palavra de 32 bits.
+ * @return RR(x,7) XOR RR(x,18) XOR (x >> 3), onde >> e deslocamento logico.
+ */
 #define SG0(x) (RR(x,7)^RR(x,18)^((x)>>3))
+/**
+ * @def SG1(x)
+ * @brief Sigma pequeno 1 da expansao da mensagem (FIPS 180-4, secao 4.1.5).
+ * @param[in] x Palavra de 32 bits.
+ * @return RR(x,17) XOR RR(x,19) XOR (x >> 10), onde >> e deslocamento logico.
+ */
 #define SG1(x) (RR(x,17)^RR(x,19)^((x)>>10))
 
+/**
+ * @brief Le 4 bytes consecutivos como palavra de 32 bits em big-endian.
+ * @param[in] p Leitura de 4 bytes a partir desta posicao.
+ * @return Palavra com p[0] no byte mais significativo e p[3] no menos
+ *         significativo.
+ */
 static uint32_t be32(const uint8_t *p) {
     return ((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|((uint32_t)p[2]<<8)|p[3];
 }
+/**
+ * @brief Grava uma palavra de 32 bits como 4 bytes consecutivos em big-endian.
+ * @param[out] p Escrita de exatamente 4 bytes a partir desta posicao.
+ * @param[in]  v Palavra a gravar.
+ */
 static void be32_put(uint8_t *p, uint32_t v) {
     p[0]=(uint8_t)(v>>24); p[1]=(uint8_t)(v>>16); p[2]=(uint8_t)(v>>8); p[3]=(uint8_t)v;
 }
 
+/**
+ * @brief Processa um unico bloco de 64 bytes e atualiza o estado de trabalho.
+ * @details Etapa de compressao do SHA-256 (FIPS 180-4, secao 4.2.2):
+ *          1) expande os 16 valores big-endian de blk em w[0..63], usando
+ *             SG1/SG0 para w[16..63];
+ *          2) executa as 64 rodadas com CH, MAJ, EP0, EP1 e as constantes K[],
+ *             rotacionando as variaveis locais a..h (cc e o apelido local para
+ *             o terceiro registrador de estado, por conflito de nome com o
+ *             nome da variavel do contexto);
+ *          3) soma os valores resultantes ao estado anterior (somas de
+ *             32 bits com overflow modulo 2^32).
+ * @param[in,out] c   Contexto cujo estado de 8 palavras e atualizado no local.
+ * @param[in]     blk Bloco de exatamente 64 bytes a comprimir.
+ * @pre ctx deve estar inicializado (zupt_sha256_init) e blk deve conter
+ *      pelo menos 64 bytes legiveis.
+ * @see zupt_sha256_update()
+ */
 static void sha256_transform(zupt_sha256_ctx *c, const uint8_t blk[64]) {
     uint32_t w[64], a,b,d,e,f,g,h,t1,t2;
     int i;

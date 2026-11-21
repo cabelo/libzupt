@@ -1,9 +1,225 @@
-PROJECT_NAME = libzupt
-PROJECT_NUMBER = 2.0.0
-OUTPUT_DIRECTORY = ../libzupt-apidocs
-INPUT = include/zupt.hpp include/zupt_cxx.h
-EXTRACT_ALL = YES
-GENERATE_HTML = YES
-GENERATE_LATEX = NO
-QUIET = YES
-WARN_IF_UNDOCUMENTED = NO
+# -*- Doxyfile -*-
+#
+# Configuração de documentação do libzupt (repositório: /dados/fontes/libzupt).
+#
+# Uso (a partir da raiz do repositório):
+#
+#     doxygen Doxyfile
+#
+# Caminhos são relativos ao diretório deste arquivo. Saída em build/apidocs/
+# (gerada, não versionada — .gitignore já cobre build*/).
+#
+# Compatível com Doxygen 1.8.14; deve funcionar sem alterações em 1.9.x.
+# Opções não listadas aqui conservam os valores padrão da versão utilizada
+# (o arquivo foi escrito a partir de `doxygen -g` e reduzido ao necessário).
+# ---------------------------------------------------------------------------
+
+# PROJETO -------------------------------------------------------------------
+
+PROJECT_NAME           = "libzupt"
+# Origem: LIBZUPT_VERSION_STRING em include/libzupt_version.h, que é o valor
+# usado pelo CMakeLists.txt para PROJECT_VERSION. A árvore contém três
+# versões divergentes (também 2.1.5 em ZUPT_VERSION_STRING no include/zupt.h e
+# 2.0.0 em CHANGES.md/README.md); elas são documentadas como estão, não
+# unificadas. Ver docs/doxygen/LIMITACOES.md.
+PROJECT_NUMBER         = 1.0.15
+PROJECT_BRIEF          = "Biblioteca C11/C++17 de criptografia autenticada híbrida (ML-KEM-768 + X25519) com compressão"
+PROJECT_LOGO           =
+OUTPUT_DIRECTORY       = build/apidocs
+OUTPUT_LANGUAGE        = Portuguese
+
+# ENTRADA -------------------------------------------------------------------
+
+INPUT                 = include \
+                        src \
+                        examples_python/zupt_pybind.cpp \
+                        examples_nodejs/src/zupt_napi.cpp \
+                        examples_nodejs/src/zupt_crypto_c_bridge.c \
+                        examples_nodejs/src/zupt_crypto_cpp_bridge.cpp \
+                        examples_java/zupt_jni.cpp \
+                        docs/doxygen/mainpage.md \
+                        docs/doxygen/arquitetura.md \
+                        docs/doxygen/api-guia.md \
+                        docs/doxygen/formato.md \
+                        docs/doxygen/memoria.md \
+                        docs/doxygen/erros.md \
+                        docs/doxygen/concorrencia.md \
+                        docs/doxygen/seguranca.md \
+                        docs/doxygen/compilacao.md \
+                        docs/doxygen/exemplos.md \
+                        docs/doxygen/limitacoes.md \
+                        docs/doxygen/inventario.md
+
+# O conteudo de mainpage.md passa a ser a pagina index.html; sem isto o
+# index gerado ficava vazio.
+USE_MDFILE_AS_MAINPAGE = docs/doxygen/mainpage.md
+
+FILE_PATTERNS          = *.c \
+                         *.h \
+                         *.cc \
+                         *.cpp \
+                         *.hpp \
+                         *.md
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */build*/* \
+                         */.git/* \
+                         */node_modules/* \
+                         */target/* \
+                         */__pycache__/*
+EXCLUDE              =
+EXAMPLE_PATH         =
+EXAMPLE_PATTERNS     =
+IMAGE_PATH           =
+INCLUDE_FILE_PATTERNS =
+# `ZUPT_API` é visível: não deve aparecer na assinatura dos símbolos.
+# `JNIEXPORT`/`JNICALL` (JNI) e `PYBIND11_MODULE` (pybind11) são expandidos para
+# nada de propósito: sem isso o analisador da versão 1.8.14 não reconhece as
+# assinaturas dos métodos nativos e passa a reportá-los como membros sem
+# documentação. A macro `PYBIND11_MODULE` gera o módulo em tempo de compilação,
+# e a função resultante não tem corpo para o Doxygen analisar.
+PREDEFINED             = ZUPT_API= \
+                         DOXYGEN_SHOULD_SKIP_THIS \
+                         JNIEXPORT= \
+                         JNICALL= \
+                         "PYBIND11_MODULE(name, variable)="
+EXPAND_AS_DEFINED      =
+SKIP_FUNCTION_MACROS   = YES
+
+# EXTRATORES ----------------------------------------------------------------
+
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_PACKAGE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+EXTRACT_LOCAL_METHODS  = YES
+EXTRACT_ANON_NSPACES   = NO
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+HIDE_FRIEND_COMPOUNDS  = NO
+HIDE_IN_BODY_DOCS      = NO
+INTERNAL_DOCS          = NO
+CASE_SENSE_NAMES       = YES
+HIDE_SCOPE_NAMES       = NO
+HIDE_COMPOUND_REFERENCE= NO
+SHOW_INCLUDE_FILES     = YES
+SHOW_GROUPED_MEMB_INC  = NO
+FORCE_LOCAL_INCLUDES   = NO
+INLINE_INFO            = YES
+SORT_MEMBER_DOCS       = YES
+SORT_BRIEF_DOCS        = NO
+SORT_MEMBERS_CTORS_1ST = NO
+SORT_GROUP_NAMES       = NO
+SORT_BY_SCOPE_NAME     = NO
+GENERATE_TODOLIST      = YES
+GENERATE_TESTLIST      = YES
+GENERATE_BUGLIST       = YES
+GENERATE_DEPRECATEDLIST= YES
+
+# ALIASES -------------------------------------------------------------------
+
+ALIASES                = "prototipo=\par Protótipo\n"
+
+# AVISOS (metas de qualidade: geração deve terminar sem avisos) --------------
+
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = YES
+WARN_AS_ERROR          = NO
+WARN_FORMAT            = "$file:$line: $text"
+WARN_LOGFILE           =
+
+# CÓDIGO FONTE --------------------------------------------------------------
+
+INPUT_FILTER           =
+FILTER_SOURCE_FILES    = NO
+
+# CÓDIGO FONTE (continuação) -----------------------------------------------
+
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+REFERENCES_LINK_SOURCE = YES
+USE_HTAGS              = NO
+
+# INTERAJAX / NAVEGAÇÃO -----------------------------------------------------
+
+ALPHABETICAL_INDEX     = YES
+COLS_IN_ALPHA_INDEX    = 5
+IGNORE_PREFIX          = zupt_
+
+# HTML ----------------------------------------------------------------------
+
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_FILE_EXTENSION    = .html
+HTML_HEADER            =
+HTML_FOOTER            =
+HTML_STYLESHEET        =
+HTML_EXTRA_STYLESHEET  =
+HTML_EXTRA_FILES       =
+HTML_COLORSTYLE_HUE    = 220
+HTML_COLORSTYLE_SAT    = 40
+HTML_COLORSTYLE_GAMMA  = 80
+HTML_TIMESTAMP         = NO
+HTML_DYNAMIC_SECTIONS  = NO
+HTML_INDEX_NUM_ENTRIES = 100
+GENERATE_DOCSET        = NO
+GENERATE_HTMLHELP      = NO
+GENERATE_CHI           = NO
+BINARY_TOC             = NO
+TOC_EXPAND             = NO
+GENERATE_QHP           = NO
+QHP_NAMESPACE          =
+DISABLE_INDEX          = NO
+GENERATE_TREEVIEW      = YES
+TOC_INCLUDE_HEADINGS   = 3
+
+# LATEX (desabilitado conforme política: apenas HTML) ----------------------
+
+GENERATE_LATEX         = NO
+LATEX_OUTPUT           = latex
+
+# OUTROS FORMATS (desativados) ---------------------------------------------
+
+GENERATE_RTF           = NO
+GENERATE_MAN           = NO
+GENERATE_XML           = NO
+GENERATE_DOCBOOK       = NO
+
+# GRÁFICOS (Graphviz opcional; `dot` presente no ambiente de referência) ---
+
+HAVE_DOT               = YES
+DOT_NUM_THREADS        = 0
+DOT_FONTNAME           = Helvetica
+DOT_FONTSIZE           = 10
+DOT_FONTPATH           =
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = YES
+GROUP_GRAPHS           = YES
+UML_LOOK               = NO
+TEMPLATE_RELATIONS     = NO
+INCLUDE_GRAPH          = YES
+INCLUDED_BY_GRAPH      = YES
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+GRAPHICAL_HIERARCHY    = YES
+DIRECTORY_GRAPH        = YES
+DOT_IMAGE_FORMAT       = png
+DOT_PATH               =
+DOTFILE_DIRS           =
+DOT_GRAPH_MAX_NODES    = 60
+MAX_DOT_GRAPH_DEPTH    = 0
+DOT_TRANSPARENT        = NO
+DOT_MULTI_TARGETS      = NO
+GENERATE_LEGEND        = YES
+DOT_CLEANUP            = YES
+
+# BUSCA ---------------------------------------------------------------------
+
+SEARCHENGINE           = YES
+SERVER_BASED_SEARCH    = NO
+EXTERNAL_SEARCH        = NO
