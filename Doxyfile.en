@@ -1,0 +1,65 @@
+# -*- Doxyfile -*-
+#
+# Configuracao da documentacao EM INGLES do libzupt.
+#
+# Herda tudo de `Doxyfile` (a configuracao em portugues) por @INCLUDE e
+# sobrescreve apenas o que muda entre os dois idiomas. Gerar a partir da raiz
+# do repositorio:
+#
+#     doxygen Doxyfile        #  build/apidocs/html      (portugues)
+#     doxygen Doxyfile.en     #  build/apidocs-en/html   (ingles)
+#
+# O texto vem dos mesmos fontes: cada comentario de documentacao guarda as duas
+# versoes em secoes condicionais (@cond PORT / @cond INGLES), escolhidas por
+# ENABLED_SECTIONS. As paginas explicativas em markdown tem contraparte em
+# docs/doxygen/en/, reutilizando os mesmos IDs de @page para que os @ref
+# espalhados pelo codigo resolvam nas duas rodadas.
+# ---------------------------------------------------------------------------
+
+@INCLUDE = Doxyfile
+
+# IDIOMA --------------------------------------------------------------------
+
+OUTPUT_LANGUAGE        = English
+ENABLED_SECTIONS       = INGLES
+
+# Rotulo do alias @prototipo. No Portuguese vale "Prototipo"; aqui, "Prototype".
+ALIASES                = "prototipo=\par Prototype\n"
+
+PROJECT_NAME           = "libzupt"
+PROJECT_BRIEF          = "C11/C++17 library for hybrid authenticated encryption (ML-KEM-768 + X25519) with compression"
+
+# SAIDA ---------------------------------------------------------------------
+
+OUTPUT_DIRECTORY       = build/apidocs-en
+
+# Diagramas desenhados a mao, com rotulos em ingles. Os de portugues ficam em
+# docs/doxygen/dot/pt/ e tem os mesmos nomes de arquivo, cada um gerando as
+# proprias imagens dentro da sua arvore de saida.
+DOTFILE_DIRS           = docs/doxygen/dot/en
+
+# ENTRADA -------------------------------------------------------------------
+# Mesmos arquivos de codigo; apenas as paginas explicativas trocam para a
+# versao em ingles.
+
+INPUT                 = include \
+                        src \
+                        examples_python/zupt_pybind.cpp \
+                        examples_nodejs/src/zupt_napi.cpp \
+                        examples_nodejs/src/zupt_crypto_c_bridge.c \
+                        examples_nodejs/src/zupt_crypto_cpp_bridge.cpp \
+                        examples_java/zupt_jni.cpp \
+                        docs/doxygen/en/mainpage.md \
+                        docs/doxygen/en/arquitetura.md \
+                        docs/doxygen/en/api-guia.md \
+                        docs/doxygen/en/formato.md \
+                        docs/doxygen/en/memoria.md \
+                        docs/doxygen/en/erros.md \
+                        docs/doxygen/en/concorrencia.md \
+                        docs/doxygen/en/seguranca.md \
+                        docs/doxygen/en/compilacao.md \
+                        docs/doxygen/en/exemplos.md \
+                        docs/doxygen/en/limitacoes.md \
+                        docs/doxygen/en/inventario.md
+
+USE_MDFILE_AS_MAINPAGE = docs/doxygen/en/mainpage.md

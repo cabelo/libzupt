@@ -1,0 +1,80 @@
+// Graph of the libzupt layers.
+// Every edge corresponds to a call or #include verified in the code:
+//   zupt_pybind.cpp / zupt_napi.cpp / zupt_jni.cpp -> "zupt.hpp"
+//   zupt.hpp -> "zupt_cxx.h"
+//   zupt_cxx.c -> zupt_hybrid_*, zupt_encrypt_buffer, zupt_hmac_sha256 (zupt_crypto.c)
+//   zupt_cxx.c -> zupt_mlkem768_keygen, zupt_x25519_base, zupt_sha256_init/update/final
+//   zupt_cxx.c -> zupt_munlock_keys (zupt_mlock.c)
+//   zupt_crypto.c -> zupt_mlkem.h, zupt_x25519.h, zupt_keccak.h, zupt_xxh64,
+//                    zupt_aes256_encrypt_block, zupt_mlock_keys
+//   zupt_mlkem.c -> zupt_sha3_256/512, zupt_shake128_*, zupt_shake256 (zupt_keccak.c)
+// Layer 0 never points upward.
+digraph camadas {
+  rankdir=TB;
+  nodesep=0.30;
+  ranksep=0.55;
+  fontname="Helvetica";
+  node [shape=box, style="rounded,filled", fontsize=10, fontname="Helvetica"];
+  edge [color="#555555", arrowsize=0.55, fontsize=9, fontname="Helvetica"];
+
+  subgraph cluster_ffi {
+    label="language boundaries (examples)";
+    style="rounded,dashed"; color="#999999"; fontsize=11;
+    py   [label="zupt_pybind.cpp\nPython (pybind11)", fillcolor="#f2f2f2"];
+    napi [label="zupt_napi.cpp\nNode.js (N-API)", fillcolor="#f2f2f2"];
+    java [label="zupt_jni.cpp\nJava (JNI)", fillcolor="#f2f2f2"];
+  }
+
+  subgraph cluster_l3 {
+    label="layer 3 - boundaries";
+    style="rounded"; color="#6b8cae"; fontsize=11;
+    hpp  [label="zupt.hpp\nC++ API (raises ZuptError)", fillcolor="#dce6f7"];
+    cxx  [label="zupt_cxx.c\nC front for envelopes and files", fillcolor="#dce6f7"];
+    cxxh [label="zupt_cxx.h\nC signatures used by the FFI", shape=note, fillcolor="#eef4fb"];
+  }
+
+  subgraph cluster_l2 {
+    label="layer 2 - cryptographic glue";
+    style="rounded"; color="#6f9e6f"; fontsize=11;
+    crypto [label="zupt_crypto.c\nHMAC-SHA256, PBKDF2, AES-256-CTR,\nZKEY, envelope Encrypt-then-MAC", fillcolor="#ddeedd"];
+    mlock  [label="zupt_mlock.c\npinning of secret pages", fillcolor="#ddeedd"];
+  }
+
+  subgraph cluster_l1 {
+    label="layer 1 - KEM and key exchange";
+    style="rounded"; color="#c98f4a"; fontsize=11;
+    mlkem  [label="zupt_mlkem.c\nML-KEM-768 (NTT, q = 3329)", fillcolor="#f7e6cf"];
+    x25519 [label="zupt_x25519.c\nX25519 (RFC 7748), 5 x 51 bits", fillcolor="#f7e6cf"];
+  }
+
+  subgraph cluster_l0 {
+    label="layer 0 - primitives";
+    style="rounded"; color="#b06060"; fontsize=11;
+    sha256 [label="zupt_sha256.c\nSHA-256 (FIPS 180-4)", fillcolor="#f3d8d8"];
+    keccak [label="zupt_keccak.c\nKeccak-f[1600]: SHA-3, SHAKE", fillcolor="#f3d8d8"];
+    aes    [label="zupt_aes256.c\nAES-256: single-block cipher\n(portable or AES-NI)", fillcolor="#f3d8d8"];
+    xxh    [label="zupt_xxh.c\nXXH32 / XXH64", fillcolor="#f3d8d8"];
+  }
+
+  py   -> hpp;
+  napi -> hpp;
+  java -> hpp;
+  hpp  -> cxxh [label="extern \"C\"", fontsize=8];
+  cxx  -> cxxh [style=dashed, label="implements", fontsize=8];
+
+  cxx    -> crypto [label="envelope, buffers"];
+  cxx    -> mlock  [label="zupt_munlock_keys", fontsize=8];
+  cxx    -> mlkem  [label="keygen", fontsize=8];
+  cxx    -> x25519 [label="zupt_x25519_base", fontsize=8];
+  cxx    -> sha256 [label="incremental hash", fontsize=8];
+
+  crypto -> mlkem;
+  crypto -> x25519;
+  crypto -> keccak  [label="zupt_sha3_512", fontsize=8];
+  crypto -> sha256  [label="HMAC, PBKDF2", fontsize=8];
+  crypto -> aes     [label="CTR", fontsize=8];
+  crypto -> xxh     [label="checksum ZKEY", fontsize=8];
+  crypto -> mlock   [label="zupt_mlock_keys", fontsize=8];
+
+  mlkem -> keccak [label="zetas, G, expansion", fontsize=8];
+}
