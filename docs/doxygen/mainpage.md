@@ -15,6 +15,17 @@ código e registra a divergência. Ver @ref page-limitacoes.
   permanecem em inglês.
 - Apenas comentários foram adicionados aos fontes. Nenhuma linha de código,
   assinatura, valor de macro ou bloco ACSL foi alterado.
+- Duas línguas a partir dos mesmos fontes: `Doxyfile` gera a versão em
+  português e `Doxyfile.en` gera a versão em inglês (`OUTPUT_LANGUAGE =
+  English`, saída em `build/apidocs-en/html/`). Cada comentário de
+  documentação traz os dois textos em seções condicionais sucessivas,
+  selecionadas pelo `ENABLED_SECTIONS` da configuração; os gráficos usam
+  `docs/doxygen/dot/pt/` na versão portuguesa e `docs/doxygen/dot/en/` na
+  inglesa.
+- A navegação de código (`SOURCE_BROWSER = YES`) publica o fonte tal como ele
+  está no disco, de modo que as páginas `*_source.html` mostram os dois
+  idiomas e as marcações das seções condicionais. Isso é esperado: filtrar o
+  texto do fonte desalinharia os números de linha citados pela documentação.
 
 \section main-arquivos O que existe na árvore
 

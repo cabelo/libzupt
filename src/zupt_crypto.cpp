@@ -5,31 +5,62 @@
  * SPDX-License-Identifier: MIT
  */
 
-/*! \file src/zupt_crypto.cpp
- *  \brief Implementação da camada C++ declarada em \ref include/zupt.hpp.
+/*!
+ * @cond PORT
+ * \file src/zupt_crypto.cpp
+ * \brief Implementação da camada C++ declarada em \ref include/zupt.hpp.
  *
- *  \details Conteúdo deste arquivo:
- *          - `KeyGenerator`: geração de par híbrido em memória e empacotamento
- *            no formato ZKEY, além de leitura/validação/exports de arquivos de
- *            chave (leitura feita diretamente com `std::ifstream`, sem as
- *            verificações de link simbólico e de dono usadas pelo shim C);
- *          - `Encryptor`: valida a chave pública (magic, versão, flags e
- *            estrutura ML-KEM) e delega a cifra a \ref zupt_hybrid_encrypt;
- *          - `Decryptor`: delega a decifragem a \ref zupt_hybrid_decrypt e
- *            zera o texto em claro intermediário devolvido pelo lado C;
- *          - funções utilitárias (`randomBytes`, `sha256`, `sha3_512`,
- *            `secureWipe`, `getVersion`, `getLibraryName`).
+ * \details Conteúdo deste arquivo:
+ * - `KeyGenerator`: geração de par híbrido em memória e empacotamento
+ * no formato ZKEY, além de leitura/validação/exports de arquivos de
+ * chave (leitura feita diretamente com `std::ifstream`, sem as
+ * verificações de link simbólico e de dono usadas pelo shim C);
+ * - `Encryptor`: valida a chave pública (magic, versão, flags e
+ * estrutura ML-KEM) e delega a cifra a \ref zupt_hybrid_encrypt;
+ * - `Decryptor`: delega a decifragem a \ref zupt_hybrid_decrypt e
+ * zera o texto em claro intermediário devolvido pelo lado C;
+ * - funções utilitárias (`randomBytes`, `sha256`, `sha3_512`,
+ * `secureWipe`, `getVersion`, `getLibraryName`).
  *
- *          \note Propriedade de memória neste arquivo: os ponteiros devolvidos
- *          por \ref zupt_hybrid_encrypt e \ref zupt_hybrid_decrypt são
- *          copiados para contêineres C++ e liberados imediatamente (com
- *          `free()` no caminho de cifra e com \ref zupt_free no caminho de
- *          decifragem). O chamador das funções C++ não recebe ponteiros nus.
- *          \note As validações de formato são feitas de novo aqui, independentes
- *          das feitas pelo shim C: por exemplo, `Encryptor` exige versão de
- *          chave igual a ZUPT_KEY_FORMAT_VERSION, enquanto o lado C aceita a
- *          chave pública com qualquer versão no byte 4 quando ela é lida do
- *          formato serializado. */
+ * \note Propriedade de memória neste arquivo: os ponteiros devolvidos
+ * por \ref zupt_hybrid_encrypt e \ref zupt_hybrid_decrypt são
+ * copiados para contêineres C++ e liberados imediatamente (com
+ * `free()` no caminho de cifra e com \ref zupt_free no caminho de
+ * decifragem). O chamador das funções C++ não recebe ponteiros nus.
+ * \note As validações de formato são feitas de novo aqui, independentes
+ * das feitas pelo shim C: por exemplo, `Encryptor` exige versão de
+ * chave igual a ZUPT_KEY_FORMAT_VERSION, enquanto o lado C aceita a
+ * chave pública com qualquer versão no byte 4 quando ela é lida do
+ * formato serializado.
+ * @endcond
+ * @cond INGLES
+ * \file src/zupt_crypto.cpp
+ * \brief Implementation of the C++ layer declared in \ref include/zupt.hpp.
+ *
+ * \details Content of this file:
+ * - `KeyGenerator`: hybrid key pair generation in memory and packaging
+ * into the ZKEY format, plus reading/validation/exporting of key files
+ * (reading done directly with `std::ifstream`, without the symbolic link
+ * and owner checks used by the C shim);
+ * - `Encryptor`: validates the public key (magic, version, flags and
+ * ML-KEM structure) and delegates the encryption to \ref zupt_hybrid_encrypt;
+ * - `Decryptor`: delegates the decryption to \ref zupt_hybrid_decrypt and
+ * zeroes the intermediate plaintext returned by the C side;
+ * - utility functions (`randomBytes`, `sha256`, `sha3_512`,
+ * `secureWipe`, `getVersion`, `getLibraryName`).
+ *
+ * \note Memory ownership in this file: the pointers returned
+ * by \ref zupt_hybrid_encrypt and \ref zupt_hybrid_decrypt are
+ * copied into C++ containers and freed immediately (with
+ * `free()` in the encryption path and with \ref zupt_free in the
+ * decryption path). The caller of the C++ functions does not receive
+ * bare pointers.
+ * \note The format validations are done again here, independently
+ * of those done by the C shim: for example, `Encryptor` requires the key
+ * version to be equal to ZUPT_KEY_FORMAT_VERSION, while the C side accepts
+ * the public key with any version in byte 4 when it is read from the
+ * serialized format.
+ * @endcond */
 
 #include "zupt.hpp"
 #include "zupt_cxx.h"

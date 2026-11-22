@@ -42,6 +42,14 @@
  *
  * É o que `docs/FORMAT.md` chama de "application format v2".
  *
+ * \dotfile envelope.dot "Layout do envelope v2 tal como o código o escreve (src/zupt_cxx.c:351-398)"
+ *
+ * O desenho acima é a sequência que `zupt_hybrid_encrypt()` monta byte a byte.
+ * Ele não contradiz as tabelas abaixo: os registros ali são os do lado C, de
+ * `4 + n + 48` bytes (`u32le(n)` seguido de `nonce(16) ‖ cifra(n) ‖ HMAC(32)`),
+ * e o aviso ao fim desta página registra que o emolduramento descrito em
+ * `docs/FORMAT.md` é outro.
+ *
  * ## Chave pública (1224 bytes)
  *
  * | Deslocamento | Campo | Tamanho |

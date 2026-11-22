@@ -1,0 +1,50 @@
+// Diagram of the v2 envelope ("ZUP2").
+// Source: src/zupt_cxx.c:351-398 (zupt_hybrid_encrypt),
+//        src/zupt_cxx.c:243-247 (ENVELOPE_PREFIX = 12, ENVELOPE_TAG = 32),
+//        src/zupt_crypto.c:647 and 664 (block payload = 16 + n + 32).
+// Total size verified in the code:
+//   total = ENVELOPE_PREFIX + plaintext_len + blocks * 52 + ENVELOPE_TAG
+//         = 12 + n_total + blocks * 52 + 32
+digraph envelope {
+  rankdir=LR;
+  splines=false;
+  nodesep=0.10;
+  ranksep=0.30;
+  fontname="Helvetica";
+  edge [color="#555555", arrowsize=0.5, fontsize=9];
+  node [shape=plaintext, fontsize=9];
+
+  subgraph cluster_env {
+    label="envelope v2 (what zupt_hybrid_encrypt returns in `ciphertext`)";
+    style="rounded"; color="#6b8cae"; fontsize=11;
+
+    hdr [label=<<table border="0" cellborder="1" cellspacing="0">
+           <tr><td port="m" bgcolor="#dce6f7">"ZUP2"<br/><font point-size="8">4 bytes</font></td>
+               <td port="l" bgcolor="#dce6f7">u64le(plaintext length)<br/><font point-size="8">8 bytes</font></td>
+               <td port="r" bgcolor="#eef4fb">u32le(n) + record<br/><font point-size="8">4 + n + 48 bytes each</font></td>
+               <td port="t" bgcolor="#f3d8d8">final HMAC-SHA256 tag<br/><font point-size="8">32 bytes</font></td></tr>
+         </table>>];
+
+    reg [label=<<table border="0" cellborder="1" cellspacing="0">
+           <tr><td bgcolor="#f7f7f7">u32le(n)<br/><font point-size="8">4 bytes, offset 0</font></td>
+               <td bgcolor="#ddeedd">block nonce<br/><font point-size="8">16 bytes, offset 4</font></td>
+               <td bgcolor="#ddeedd">ciphertext<br/><font point-size="8">n bytes, offset 20</font></td>
+               <td bgcolor="#ddeedd">record MAC<br/><font point-size="8">32 bytes, offset 20+n</font></td></tr>
+         </table>>];
+  }
+
+  hdr:r -> reg [style=dashed, label="each record", fontsize=8];
+
+  subgraph cluster_ch {
+    label="1137-byte cipher header (`enc_header`, src/zupt_crypto.c:1359)";
+    style="rounded"; color="#c98f4a"; fontsize=11;
+    ch [label=<<table border="0" cellborder="1" cellspacing="0">
+          <tr><td bgcolor="#f7e6cf">discriminator<br/><font point-size="8">1 byte</font></td>
+              <td bgcolor="#f7e6cf">ML-KEM-768 ciphertext<br/><font point-size="8">1088 bytes</font></td>
+              <td bgcolor="#f7e6cf">ephemeral X25519 public key<br/><font point-size="8">32 bytes</font></td>
+              <td bgcolor="#f7e6cf">base nonce<br/><font point-size="8">16 bytes</font></td></tr>
+        </table>>];
+  }
+
+  { rank=same; hdr; ch; }
+}

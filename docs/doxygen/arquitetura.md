@@ -7,6 +7,8 @@
  *
  * \section arch-camadas As camadas
  *
+ * \dotfile camadas.dot "Grafo de dependências entre camadas: cada aresta foi verificada no código (chamada ou diretiva de inclusão)"
+ *
  * \subsection arch-l0 Primitivas (camada 0)
  *
  * - `src/zupt_sha256.c` — SHA-256 (FIPS 180-4) incremental
@@ -117,4 +119,13 @@
  * - Para o envelope criptográfico: @ref zupt::Encryptor e `docs/FORMAT.md`.
  * - Para primitivas: @ref zupt_sha256, @ref zupt_sha3_256,
  *   @ref zupt_aes256_ctr, @ref zupt_x25519, @ref zupt_mlkem768_encaps.
+ *
+ * \section arch-fluxo Fluxo da cifra híbrida
+ *
+ * O desenho abaixo resume a sequência de chamadas do envelope v2, com os
+ * tamanhos que o código realmente escreve. As duas frentes (`zupt_cxx.c` e a
+ * camada C++) chegam ao mesmo resultado: `zupt_cxx.c` chama o keyring e o
+ * HMAC à mão, enquanto `include/zupt.hpp` usa `Encryptor`/`Decryptor`.
+ *
+ * \dotfile fluxo.dot "Sequência de chamadas da cifra e da decifra híbrida (tamanhos verificados em src/zupt_crypto.c e src/zupt_cxx.c)"
  */

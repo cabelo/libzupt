@@ -1,0 +1,51 @@
+// Hybrid key encrypt/decrypt flow, with the calls verified in the code.
+// Sender: src/zupt_crypto.c:1296-1317 and 1340-1359 (zupt_hybrid_encrypt_init_mem)
+// Receiver: src/zupt_crypto.c:1404-1445 (zupt_hybrid_decrypt_init_mem and
+//           zupt_hybrid_decrypt_init_legacy_mem, which choose between
+//           zupt_mlkem768_decaps() and zupt_legacy_mlkem768_decaps()).
+// Envelope: src/zupt_cxx.c:351-398 (zupt_hybrid_encrypt) and 401-470 (decrypt_records).
+digraph fluxo {
+  rankdir=TB;
+  nodesep=0.25;
+  ranksep=0.45;
+  fontname="Helvetica";
+  node [shape=box, style="rounded,filled", fontsize=9, fillcolor="#ffffff"];
+  edge [color="#555555", arrowsize=0.5, fontsize=8];
+
+  subgraph cluster_em {
+    label="sender";
+    style="rounded"; color="#6f9e6f"; fontsize=10;
+    e0 [label="zupt_hybrid_encrypt_init_mem", fillcolor="#ddeedd"];
+    e1 [label="zupt_mlkem768_encaps(pk_ml)\nML-KEM secret + ciphertext (1088)", fillcolor="#f7e6cf"];
+    e2 [label="zupt_x25519_base / zupt_x25519\nephemeral X25519 secret", fillcolor="#f7e6cf"];
+    e3 [label="rejects an all-zero X25519 secret", shape=diamond, fillcolor="#f3d8d8"];
+    e4 [label="hybrid_kdf\n64 bytes: enc_key + mac_key", fillcolor="#ddeedd"];
+    e5 [label="zupt_mlock_keys\n(enc_key, mac_key)", fillcolor="#ddeedd"];
+    e6 [label="writes the cipher header\n(1 + 1088 + 32 + 16 = 1137 bytes)", fillcolor="#dce6f7"];
+    e0 -> e1 -> e2 -> e3 -> e4 -> e5 -> e6;
+  }
+
+  subgraph cluster_env {
+    label="envelope v2";
+    style="rounded"; color="#6b8cae"; fontsize=10;
+    v0 [label="zupt_encrypt_buffer per block\n(nonce 16 + ciphertext n + MAC 32)", fillcolor="#dce6f7"];
+    v1 [label="envelope_tag\nHMAC-SHA256 over header + records", fillcolor="#dce6f7"];
+    v0 -> v1;
+  }
+
+  subgraph cluster_rc {
+    label="receiver";
+    style="rounded"; color="#b06060"; fontsize=10;
+    r0 [label="zupt_hybrid_decrypt_init_mem\nor ..._legacy_mem", fillcolor="#f3d8d8"];
+    r1 [label="zupt_mlkem768_decaps\nor zupt_legacy_mlkem768_decaps", fillcolor="#f7e6cf"];
+    r2 [label="zupt_x25519\nX25519 secret", fillcolor="#f7e6cf"];
+    r3 [label="hybrid_kdf\nsame 64 bytes", fillcolor="#f3d8d8"];
+    r4 [label="checks the final tag\nBEFORE reading lengths", fillcolor="#f3d8d8"];
+    r5 [label="decrypt_records\nvalidates each n before use", fillcolor="#f3d8d8"];
+    r0 -> r1 -> r2 -> r3 -> r4 -> r5;
+  }
+
+  e6 -> v0 [label="records", fontsize=8];
+  v1 -> r4 [label="final tag", fontsize=8];
+  e6 -> r1 [label="1088 + 32 + 16", fontsize=8];
+}

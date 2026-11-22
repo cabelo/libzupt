@@ -120,6 +120,43 @@ GENERATE_DEPRECATEDLIST= YES
 
 ALIASES                = "prototipo=\par Protótipo\n"
 
+# IDIOMA (documentação bilíngue: português + inglês na mesma árvore) ---------
+#
+# Cada comentário de documentação da árvore guarda duas versões do mesmo texto,
+# separadas por seções condicionais do Doxygen:
+#
+#     /**
+#      * @cond PORT
+#      * @brief  Gera um par de chaves híbridas.
+#      * @endcond
+#      * @cond INGLES
+#      * @brief  Generate a hybrid key pair.
+#      * @endcond
+#      */
+#
+# `ENABLED_SECTIONS` escolhe qual das duas o Doxygen lê. Este arquivo é a
+# configuração em português. A versão em inglês é `Doxyfile.en`, que herda tudo
+# daqui por `@INCLUDE` e sobrescreve apenas o que muda: `OUTPUT_LANGUAGE`,
+# `ENABLED_SECTIONS`, `OUTPUT_DIRECTORY`, `USE_MDFILE_AS_MAINPAGE`, `INPUT`,
+# `DOTFILE_DIRS` e `ALIASES`. Geradas a partir da raiz do repositório:
+#
+#     doxygen Doxyfile         #  build/apidocs/html    (português)
+#     doxygen Doxyfile.en      #  build/apidocs-en/html (inglês)
+#
+# A meta de qualidade sem avisos vale para as duas rodadas. Com
+# `WARN_IF_UNDOCUMENTED` e `WARN_NO_PARAMDOC` ativos, um item cujo texto exista
+# só dentro de uma seção desativada gera "Member ... is not documented";
+# portanto a rodada em inglês sem avisos é a prova de que todo item documentado
+# em português tem contraparte em inglês (e vice-versa).
+#
+# Cuidados com a sintaxe, todos já encontrados nesta árvore: `@cond` e
+# `@endcond` literais na prosa quebram o balanceamento das seções; em páginas
+# markdown, `#include`/`#ifdef` literais precisam de barra invertida; e um
+# `@ref` quebrado em duas linhas é lido como "expected whitespace after ref
+# command".
+
+ENABLED_SECTIONS       = PORT
+
 # AVISOS (metas de qualidade: geração deve terminar sem avisos) --------------
 
 WARNINGS               = YES
@@ -190,10 +227,19 @@ GENERATE_MAN           = NO
 GENERATE_XML           = NO
 GENERATE_DOCBOOK       = NO
 
-# GRÁFICOS (Graphviz opcional; `dot` presente no ambiente de referência) ---
+# GRÁFICOS (graphviz `dot` — necessário para todos os diagramas) ------------
+#
+# `dot` não é opcional aqui: sem ele o Doxygen gera as páginas HTML em silêncio e
+# omite todo diagrama (inclusão, inclusão reversa, chamada, chamadores,
+# hierarquia de classes, colaboração, grafo de diretórios e os diagramas
+# desenhados à mão nas páginas de explicação com `\dot ... \enddot`).
+# Ambiente de referência: graphviz 2.48.0 (`dot` em `PATH`).
+# `DOT_GRAPH_MAX_NODES` foi elevado de 60 para 120 para que o grafo de
+# colaboração de `zupt.hpp`/`zupt_cxx.h` e o grafo de inclusão de `zupt.h` não
+# sejam truncados com a legenda "graph was too big".
 
 HAVE_DOT               = YES
-DOT_NUM_THREADS        = 0
+DOT_NUM_THREADS        = 4
 DOT_FONTNAME           = Helvetica
 DOT_FONTSIZE           = 10
 DOT_FONTPATH           =
@@ -204,14 +250,14 @@ UML_LOOK               = NO
 TEMPLATE_RELATIONS     = NO
 INCLUDE_GRAPH          = YES
 INCLUDED_BY_GRAPH      = YES
-CALL_GRAPH             = NO
-CALLER_GRAPH           = NO
+CALL_GRAPH             = YES
+CALLER_GRAPH           = YES
 GRAPHICAL_HIERARCHY    = YES
 DIRECTORY_GRAPH        = YES
-DOT_IMAGE_FORMAT       = png
+DOT_IMAGE_FORMAT       = svg
 DOT_PATH               =
-DOTFILE_DIRS           =
-DOT_GRAPH_MAX_NODES    = 60
+DOTFILE_DIRS           = docs/doxygen/dot/pt
+DOT_GRAPH_MAX_NODES    = 120
 MAX_DOT_GRAPH_DEPTH    = 0
 DOT_TRANSPARENT        = NO
 DOT_MULTI_TARGETS      = NO

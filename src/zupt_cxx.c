@@ -6,34 +6,64 @@
  */
 
 /**
+ * @cond PORT
  * @file  src/zupt_cxx.c
  * @brief Implementação do "shim" C da API híbrida (`zupt_cxx.h`): geração de
- *        chaves, E/S de arquivos e cifra/decifra de envelopes.
+ * chaves, E/S de arquivos e cifra/decifra de envelopes.
  * @details Este é o TU que a camada C++ (`include/zupt.hpp`) e os bindings
- *          (Python, Node, Java) chamam para atravessar a fronteira C.
+ * (Python, Node, Java) chamam para atravessar a fronteira C.
  *
- *          <b>Propriedade de memória</b>: todo ponteiro devolvido por estas
- *          funções (`zupt_read_file`, `zupt_hybrid_encrypt`,
- *          `zupt_hybrid_decrypt`, `zupt_hybrid_decrypt_legacy`) foi alocado
- *          com `malloc()` aqui e deve ser liberado com `zupt_free()`. As
- *          funções que devolvem `int` escrevem apenas nos buffers que o
- *          chamador fornece (`pub_key`, `priv_key`, `enc_header`), sem alocação
- *          própria.
+ * <b>Propriedade de memória</b>: todo ponteiro devolvido por estas
+ * funções (`zupt_read_file`, `zupt_hybrid_encrypt`,
+ * `zupt_hybrid_decrypt`, `zupt_hybrid_decrypt_legacy`) foi alocado
+ * com `malloc()` aqui e deve ser liberado com `zupt_free()`. As
+ * funções que devolvem `int` escrevem apenas nos buffers que o
+ * chamador fornece (`pub_key`, `priv_key`, `enc_header`), sem alocação
+ * própria.
  *
- *          <b>Formatos</b>: chaves usam o contêiner `ZKEY` (mágica + versão +
- *          flags + `ml_pk` 1184 + `x_pk` 32 [+ `ml_sk` 2400 + `x_sk` 32]) e os
- *          envelopes usam `ZUP2` (v2). O caminho legado v1 existe apenas em
- *          `zupt_hybrid_decrypt_legacy()`.
+ * <b>Formatos</b>: chaves usam o contêiner `ZKEY` (mágica + versão +
+ * flags + `ml_pk` 1184 + `x_pk` 32 [+ `ml_sk` 2400 + `x_sk` 32]) e os
+ * envelopes usam `ZUP2` (v2). O caminho legado v1 existe apenas em
+ * `zupt_hybrid_decrypt_legacy()`.
  *
- *          <b>Erros</b>: todas as falhas se acumulam num único valor de
- *          retorno (`NULL` ou `-1`); o código interno (CSPRNG, chave rejeitada,
- *          autenticação, E/S) não é reportado ao chamador.
+ * <b>Erros</b>: todas as falhas se acumulam num único valor de
+ * retorno (`NULL` ou `-1`); o código interno (CSPRNG, chave rejeitada,
+ * autenticação, E/S) não é reportado ao chamador.
  *
- *          <b>Concorrência</b>: não há mutex nem proteção alguma neste arquivo;
- *          cada chamada usa estado local, mas a segurança de uso simultâneo
- *          depende das funções do lado C (`zupt_mlkem*`, `zupt_x25519*`,
- *          as funções `zupt_hybrid_*_init_mem`), que também não documentam restrição.
- */
+ * <b>Concorrência</b>: não há mutex nem proteção alguma neste arquivo;
+ * cada chamada usa estado local, mas a segurança de uso simultâneo
+ * depende das funções do lado C (`zupt_mlkem*`, `zupt_x25519*`,
+ * as funções `zupt_hybrid_*_init_mem`), que também não documentam restrição.
+ * @endcond
+ * @cond INGLES
+ * @file  src/zupt_cxx.c
+ * @brief Implementation of the C "shim" of the hybrid API (`zupt_cxx.h`): key
+ * generation, file I/O, and envelope encryption/decryption.
+ * @details This is the TU that the C++ layer (`include/zupt.hpp`) and the bindings
+ * (Python, Node, Java) call to cross the C boundary.
+ *
+ * <b>Memory ownership</b>: every pointer returned by these
+ * functions (`zupt_read_file`, `zupt_hybrid_encrypt`,
+ * `zupt_hybrid_decrypt`, `zupt_hybrid_decrypt_legacy`) was allocated
+ * with `malloc()` here and must be released with `zupt_free()`. The
+ * functions that return `int` write only into buffers the
+ * caller provides (`pub_key`, `priv_key`, `enc_header`), without allocating
+ * their own.
+ *
+ * <b>Formats</b>: keys use the `ZKEY` container (magic + version +
+ * flags + `ml_pk` 1184 + `x_pk` 32 [+ `ml_sk` 2400 + `x_sk` 32]) and the
+ * envelopes use `ZUP2` (v2). The legacy v1 path exists only in
+ * `zupt_hybrid_decrypt_legacy()`.
+ *
+ * <b>Errors</b>: all failures collapse into a single return
+ * value (`NULL` or `-1`); the internal code (CSPRNG, rejected key,
+ * authentication, I/O) is not reported to the caller.
+ *
+ * <b>Concurrency</b>: there is no mutex and no protection of any kind in this file;
+ * each call uses local state, but the safety of concurrent use
+ * depends on the C-side functions (`zupt_mlkem*`, `zupt_x25519*`,
+ * the `zupt_hybrid_*_init_mem` functions), which also document no restriction.
+ * @endcond */
 
 /* Darwin hides O_NOFOLLOW in strict POSIX mode. Request its extensions before
  * any system header so private-key writes keep rejecting symbolic links. */
@@ -42,12 +72,20 @@
 #endif
 #ifndef _POSIX_C_SOURCE
 /**
+ * @cond PORT
  * @brief Macro de teste de recursos POSIX exigido por este TU.
  * @details `O_NOFOLLOW` (rejeição de symlink na escrita de chave privada) só
- *          existe com o perfil POSIX exposto; em modo POSIX estrito o cabeçalho
- *          `<fcntl.h>` pode escondê-lo. O valor `200809L` é o perfil do
- *          SUSv4/IEEE 1003.1-2008. Em Windows este macro não é usado.
- */
+ * existe com o perfil POSIX exposto; em modo POSIX estrito o cabeçalho
+ * `<fcntl.h>` pode escondê-lo. O valor `200809L` é o perfil do
+ * SUSv4/IEEE 1003.1-2008. Em Windows este macro não é usado.
+ * @endcond
+ * @cond INGLES
+ * @brief Feature test macro required by this TU.
+ * @details `O_NOFOLLOW` (symlink rejection when writing a private key) only
+ * exists with the exposed POSIX profile; in strict POSIX mode the
+ * `<fcntl.h>` header may hide it. The value `200809L` is the profile of
+ * SUSv4/IEEE 1003.1-2008. On Windows this macro is not used.
+ * @endcond */
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "zupt_cxx.h"
@@ -222,6 +260,7 @@ int zupt_write_private_key(const char* path, const uint8_t* data, size_t size) {
  * The final MAC binds the entire encryption header and complete record stream.
  * Authenticate this MAC before parsing lengths or returning any plaintext. */
 /**
+ * @cond PORT
  * @name Envelope v2 (`ZUP2`)
  * Constantes de empacotamento usadas por `zupt_hybrid_encrypt()`,
  * `zupt_hybrid_decrypt()` e `decrypt_records()`.
@@ -232,30 +271,73 @@ int zupt_write_private_key(const char* path, const uint8_t* data, size_t size) {
  * cifrado `n` + MAC 32). Autenticar a tag final antes de interpretar qualquer
  * comprimento é requisito do desenho: os comprimentos são dados do agressor.
  * @{
- */
-/*! Tamanho máximo de um bloco de texto em claro dentro do envelope, em bytes
- *  (4 MiB). O texto em claro é dividido em blocos deste tamanho e cada bloco
- *  recebe um envelope próprio de 52 bytes, o que limita o custo de autenticação
- *  antes de liberar o primeiro byte decifrado. A mesma constante é usada na
- *  leitura (`zupt_hybrid_decrypt`) para rejeitar registros anunciados com
- *  comprimento maior. */
+ * @endcond
+ * @cond INGLES
+ * @name Envelope v2 (`ZUP2`)
+ * Packing constants used by `zupt_hybrid_encrypt()`,
+ * `zupt_hybrid_decrypt()`, and `decrypt_records()`.
+ *
+ * The envelope is `"ZUP2"` ‖ `u64le(plaintext size)` ‖ records ‖
+ * final tag. Each record occupies `4 + n + 48` bytes (4-byte little-endian
+ * length, followed by the 48-byte C-side envelope: nonce 16 + ciphertext
+ * `n` + MAC 32). Authenticating the final tag before interpreting any
+ * length is a design requirement: the lengths are attacker data.
+ * @{
+ * @endcond */
+/*!
+ * @cond PORT
+ * Tamanho máximo de um bloco de texto em claro dentro do envelope, em bytes
+ * (4 MiB). O texto em claro é dividido em blocos deste tamanho e cada bloco
+ * recebe um envelope próprio de 52 bytes, o que limita o custo de autenticação
+ * antes de liberar o primeiro byte decifrado. A mesma constante é usada na
+ * leitura (`zupt_hybrid_decrypt`) para rejeitar registros anunciados com
+ * comprimento maior.
+ * @endcond
+ * @cond INGLES
+ * Maximum size of a plaintext block inside the envelope, in bytes
+ * (4 MiB). The plaintext is split into blocks of this size and each block
+ * gets its own 52-byte envelope, which limits the cost of authentication
+ * before releasing the first decrypted byte. The same constant is used in
+ * the reading (`zupt_hybrid_decrypt`) to reject records announced with
+ * a greater length.
+ * @endcond */
 #define ZUPT_ENCRYPT_BLOCK_SIZE (4 * 1024 * 1024)
-/*! Tamanho do cabeçalho do envelope, em bytes: os 4 bytes de `"ZUP2"` mais os
- *  8 bytes de `u64le` com o comprimento do texto em claro. */
+/*!
+ * @cond PORT
+ * Tamanho do cabeçalho do envelope, em bytes: os 4 bytes de `"ZUP2"` mais os
+ * 8 bytes de `u64le` com o comprimento do texto em claro.
+ * @endcond
+ * @cond INGLES
+ * Size of the envelope header, in bytes: the 4 bytes of `"ZUP2"` plus the
+ * 8 bytes of `u64le` with the length of the plaintext.
+ * @endcond */
 #define ENVELOPE_PREFIX 12
-/*! Tamanho da tag de autenticação final do envelope, em bytes. */
+/*!
+ * @cond PORT
+ * Tamanho da tag de autenticação final do envelope, em bytes.
+ * @endcond
+ * @cond INGLES
+ * Size of the final authentication tag of the envelope, in bytes.
+ * @endcond */
 #define ENVELOPE_TAG 32
-/** @} */
+/**
+ * @cond PORT
+ * @}
+ * @endcond
+ * @cond INGLES
+ * @}
+ * @endcond */
 
 /**
+ * @cond PORT
  * @brief Deriva o keyring para decifrar envelopes do formato legado v1.
  * @details Definida em `src/zupt_crypto.c`. Não está declarada em
- *          `include/zupt.h`: a declaração `extern` abaixo é o único ponto pelo
- *          qual este TU a enxerga, e o protótipo daqui não é conferido contra a
- *          definição por nenhum cabeçalho compartilhado (ver arquivo de
- *          achados). O comportamento descrito aqui foi lido da definição:
- *          analisa e valida a chave privada em buffer, invoca o núcleo de
- *          decifração em modo legado (KDF v1) e apaga as chaves temporárias.
+ * `include/zupt.h`: a declaração `extern` abaixo é o único ponto pelo
+ * qual este TU a enxerga, e o protótipo daqui não é conferido contra a
+ * definição por nenhum cabeçalho compartilhado (ver arquivo de
+ * achados). O comportamento descrito aqui foi lido da definição:
+ * analisa e valida a chave privada em buffer, invoca o núcleo de
+ * decifração em modo legado (KDF v1) e apaga as chaves temporárias.
  *
  * Os cinco parâmetros desta declaração `extern` são anônimos no código-fonte,
  * então são descritos aqui em ordem: `kr`, o keyring a preencher (capacidade de
@@ -263,47 +345,99 @@ int zupt_write_private_key(const char* path, const uint8_t* data, size_t size) {
  * `priv_key_len`, o tamanho de `priv_key`; `enc_header`, o cabeçalho de cifra
  * legado; `enc_header_len`, o tamanho de `enc_header`, que deve ser 1137.
  * @return `0` em sucesso; diferente de zero em falha (`-1` quando a chave
- *         privada é rejeitada, ou o código devolvido pelo núcleo de decifração).
- */
+ * privada é rejeitada, ou o código devolvido pelo núcleo de decifração).
+ * @endcond
+ * @cond INGLES
+ * @brief Derives the keyring used to decrypt envelopes of the legacy v1 format.
+ * @details Defined in `src/zupt_crypto.c`. It is not declared in
+ * `include/zupt.h`: the `extern` declaration below is the only point
+ * through which this TU sees it, and the prototype here is not checked against
+ * the definition by any shared header (see the findings
+ * file). The behavior described here was read from the definition:
+ * it parses and validates the private key in a buffer, invokes the
+ * decryption core in legacy mode (KDF v1), and wipes the temporary keys.
+ *
+ * The five parameters of this `extern` declaration are anonymous in the source,
+ * so they are described here in order: `kr`, the keyring to fill (capacity of
+ * `sizeof(zupt_keyring_t)`); `priv_key`, the serialized `ZKEY` private key;
+ * `priv_key_len`, the size of `priv_key`; `enc_header`, the legacy cipher
+ * header; `enc_header_len`, the size of `enc_header`, which must be 1137.
+ * @return `0` on success; non-zero on failure (`-1` when the private key
+ * is rejected, or the code returned by the decryption core).
+ * @endcond */
 extern int zupt_hybrid_decrypt_init_legacy_mem(zupt_keyring_t *,
     const uint8_t *, size_t, const uint8_t *, size_t);
 
 /**
+ * @cond PORT
  * @brief Descarta texto em claro intermediário: apaga e libera.
  * @details Se `p` for `NULL`, nada acontece (nem o `free`). Quando `p` é não
- *          nulo, apaga `len` bytes com `zupt_secure_wipe()` e chama `free()`
- *          — não `zupt_free()`, embora este TU seja a fronteira de alocação.
+ * nulo, apaga `len` bytes com `zupt_secure_wipe()` e chama `free()`
+ * — não `zupt_free()`, embora este TU seja a fronteira de alocação.
  * @param[in] p   Buffer a descartar (propriedade de quem chama).
  * @param[in] len Quantidade de bytes a apagar; deve ser o tamanho útil do
- *                buffer, e não o tamanho alocado.
+ * buffer, e não o tamanho alocado.
  * @return Nada.
- */
+ * @endcond
+ * @cond INGLES
+ * @brief Discards intermediate plaintext: wipes and frees it.
+ * @details If `p` is `NULL`, nothing happens (not even the `free`). When `p` is
+ * non-null, it wipes `len` bytes with `zupt_secure_wipe()` and calls `free()`
+ * — not `zupt_free()`, although this TU is the allocation boundary.
+ * @param[in] p   Buffer to discard (property of the caller).
+ * @param[in] len Number of bytes to wipe; must be the useful size of the
+ * buffer, and not the allocated size.
+ * @return Nothing.
+ * @endcond */
 static void discard_plain(uint8_t *p, size_t len) {
     if (p) { zupt_secure_wipe(p, len); free(p); }
 }
 
 /**
+ * @cond PORT
  * @brief Calcula a tag final de um envelope v2 sobre o cabeçalho e os registros.
  * @details Construção HMAC-SHA256 feita à mão neste TU (não usa
- *          `zupt_hmac_sha256` para a etapa externa):
- *          1. `outer_key = HMAC-SHA256(kr->mac_key, "libzupt/envelope/key/v2")`;
- *          2. `inner = SHA256((outer_key ^ 0x36, 64 bytes) ‖ "libzupt/envelope/v2" ‖
- *             header[0..1136] ‖ records[0..len-1])`;
- *          3. `tag = SHA256((outer_key ^ 0x5c, 64 bytes) ‖ inner)`.
- *          Os dois domínios de separação estão fixos no código; alterá-los
- *          quebra a interoperabilidade com envelopes já gravados.
- *          Antes do retorno, `pad`, `inner`, `outer_key` e o contexto SHA-256
- *          são apagados com `zupt_secure_wipe()`.
+ * `zupt_hmac_sha256` para a etapa externa):
+ * 1. `outer_key = HMAC-SHA256(kr->mac_key, "libzupt/envelope/key/v2")`;
+ * 2. `inner = SHA256((outer_key ^ 0x36, 64 bytes) ‖ "libzupt/envelope/v2" ‖
+ * header[0..1136] ‖ records[0..len-1])`;
+ * 3. `tag = SHA256((outer_key ^ 0x5c, 64 bytes) ‖ inner)`.
+ * Os dois domínios de separação estão fixos no código; alterá-los
+ * quebra a interoperabilidade com envelopes já gravados.
+ * Antes do retorno, `pad`, `inner`, `outer_key` e o contexto SHA-256
+ * são apagados com `zupt_secure_wipe()`.
  * @warning `header` é lido em 1137 bytes fixos, sem qualquer verificação: o
- *          buffer deve ter essa capacidade. Nenhum dos ponteiros é testado
- *          contra `NULL` aqui — a validação é responsabilidade de quem chama.
+ * buffer deve ter essa capacidade. Nenhum dos ponteiros é testado
+ * contra `NULL` aqui — a validação é responsabilidade de quem chama.
  * @param[in]  kr      Keyring ativo (só `mac_key` é usada).
  * @param[in]  header  Cabeçalho de cifra completo (1137 bytes).
  * @param[in]  records Sequência de registros, contígua.
  * @param[in]  len     Tamanho de `records`, em bytes.
  * @param[out] tag     Onde escrever os 32 bytes da tag.
  * @return Nada.
- */
+ * @endcond
+ * @cond INGLES
+ * @brief Computes the final tag of a v2 envelope over the header and the records.
+ * @details Hand-made HMAC-SHA256 construction in this TU (it does not use
+ * `zupt_hmac_sha256` for the outer step):
+ * 1. `outer_key = HMAC-SHA256(kr->mac_key, "libzupt/envelope/key/v2")`;
+ * 2. `inner = SHA256((outer_key ^ 0x36, 64 bytes) ‖ "libzupt/envelope/v2" ‖
+ * header[0..1136] ‖ records[0..len-1])`;
+ * 3. `tag = SHA256((outer_key ^ 0x5c, 64 bytes) ‖ inner)`.
+ * The two separation domains are fixed in the code; changing them
+ * breaks interoperability with envelopes already written.
+ * Before returning, `pad`, `inner`, `outer_key`, and the SHA-256 context
+ * are wiped with `zupt_secure_wipe()`.
+ * @warning `header` is read as 1137 fixed bytes, without any check: the
+ * buffer must have that capacity. None of the pointers is tested
+ * against `NULL` here — validation is the responsibility of the caller.
+ * @param[in]  kr      Active keyring (only `mac_key` is used).
+ * @param[in]  header  Complete cipher header (1137 bytes).
+ * @param[in]  records Sequence of records, contiguous.
+ * @param[in]  len     Size of `records`, in bytes.
+ * @param[out] tag     Where to write the 32 bytes of the tag.
+ * @return Nothing.
+ * @endcond */
 static void envelope_tag(const zupt_keyring_t *kr, const uint8_t header[1137],
                          const uint8_t *records, size_t len, uint8_t tag[32]) {
     static const uint8_t domain[] = "libzupt/envelope/v2";
@@ -332,16 +466,28 @@ static void envelope_tag(const zupt_keyring_t *kr, const uint8_t header[1137],
 }
 
 /**
+ * @cond PORT
  * @brief Compara duas tags de 32 bytes sem interromper no primeiro byte diferente.
  * @details Acumula em `uint32_t` o OR dos XORs byte a byte e devolve
- *          `diff == 0`. O laço percorre os 32 bytes inteiros, o que evita o
- *          padrão de ramo de uma comparação ingênua; não há aqui nenhuma
- *          garantia formal de tempo constante (a primitiva verificada por
- *          Jasmin, `zupt_mac_verify_ct`, fica no lado C).
+ * `diff == 0`. O laço percorre os 32 bytes inteiros, o que evita o
+ * padrão de ramo de uma comparação ingênua; não há aqui nenhuma
+ * garantia formal de tempo constante (a primitiva verificada por
+ * Jasmin, `zupt_mac_verify_ct`, fica no lado C).
  * @param[in] a Primeira tag (32 bytes legíveis).
  * @param[in] b Segunda tag (32 bytes legíveis).
  * @return `1` se as tags são iguais, `0` caso contrário.
- */
+ * @endcond
+ * @cond INGLES
+ * @brief Compares two 32-byte tags without stopping at the first different byte.
+ * @details Accumulates the OR of the byte-by-byte XORs in a `uint32_t` and returns
+ * `diff == 0`. The loop walks through all 32 bytes, which avoids the
+ * branch pattern of a naive comparison; there is no formal
+ * guarantee of constant time here (the primitive verified by
+ * Jasmin, `zupt_mac_verify_ct`, lives on the C side).
+ * @param[in] a First tag (32 readable bytes).
+ * @param[in] b Second tag (32 readable bytes).
+ * @return `1` if the tags are equal, `0` otherwise.
+ * @endcond */
 static int same_tag(const uint8_t a[32], const uint8_t b[32]) {
     uint32_t diff = 0;
     for (size_t i = 0; i < 32; ++i) diff |= a[i] ^ b[i];
@@ -398,38 +544,72 @@ uint8_t* zupt_hybrid_encrypt(const uint8_t* pub_key, size_t pub_key_len,
 }
 
 /**
+ * @cond PORT
  * @brief Decifra a sequência de registros de um envelope, validando cada
- *        comprimento antes de usá-lo.
+ * comprimento antes de usá-lo.
  * @details Usada por `zupt_hybrid_decrypt()` (sobre o envelope v2, já
- *          autenticado pela tag final) e por `zupt_hybrid_decrypt_legacy()`
- *          (sobre o pacote v1, cuja integridade vem do SHA-256 conferido depois).
- *          Per registro: exige pelo menos 52 bytes restantes; lê o
- *          comprimento `n` em little-endian de 4 bytes; rejeita `n` maior que
- *          `ZUPT_ENCRYPT_BLOCK_SIZE`, maior que o espaço ainda esperado, ou que
- *          não caiba no restante do pacote; rejeita `n == 0` exceto quando é o
- *          único registro de um pacote de exatamente 52 bytes. Decifra os
- *          `n + 48` bytes seguintes com `zupt_decrypt_buffer()` usando o índice
- *          do registro como `block_seq` (isso vincula o MAC de cada registro à
- *          sua posição) e exige que o resultado tenha exatamente `n` bytes.
- *          Qualquer desvio salta para o rótulo `fail`, que apaga o buffer de
- *          saída com `discard_plain()` e devolve `NULL` sem escrever
- *          `*plaintext_len`.
+ * autenticado pela tag final) e por `zupt_hybrid_decrypt_legacy()`
+ * (sobre o pacote v1, cuja integridade vem do SHA-256 conferido depois).
+ * Per registro: exige pelo menos 52 bytes restantes; lê o
+ * comprimento `n` em little-endian de 4 bytes; rejeita `n` maior que
+ * `ZUPT_ENCRYPT_BLOCK_SIZE`, maior que o espaço ainda esperado, ou que
+ * não caiba no restante do pacote; rejeita `n == 0` exceto quando é o
+ * único registro de um pacote de exatamente 52 bytes. Decifra os
+ * `n + 48` bytes seguintes com `zupt_decrypt_buffer()` usando o índice
+ * do registro como `block_seq` (isso vincula o MAC de cada registro à
+ * sua posição) e exige que o resultado tenha exatamente `n` bytes.
+ * Qualquer desvio salta para o rótulo `fail`, que apaga o buffer de
+ * saída com `discard_plain()` e devolve `NULL` sem escrever
+ * `*plaintext_len`.
  * @param[in]  kr             Keyring derivado do cabeçalho de cifra.
  * @param[in]  ciphertext     Início da sequência de registros (sem o prefixo
- *                            `ZUP2` no caso v2).
+ * `ZUP2` no caso v2).
  * @param[in]  ciphertext_len Tamanho total da sequência.
  * @param[in]  expected_len   Total de bytes de texto em claro esperado. No
- *                            v2 vem do campo `u64le` do envelope; no v1 é
- *                            somado pela varredura de registros.
+ * v2 vem do campo `u64le` do envelope; no v1 é
+ * somado pela varredura de registros.
  * @param[out] plaintext_len  Recebe o total decifrado, somente no sucesso.
  * @return Buffer `malloc`'d de `expected_len` bytes (1 byte alocado quando
- *         `expected_len == 0`), de propriedade de quem chama; liberar com
- *         `zupt_free()`.
+ * `expected_len == 0`), de propriedade de quem chama; liberar com
+ * `zupt_free()`.
  * @retval NULL pacote curto demais (`ciphertext_len < 52`), `expected_len`
- *              maior que o pacote, registro fora dos limites, falha de
- *              decifra/autenticação de um registro, total diferente do
- *              esperado, ou `malloc` falho.
- */
+ * maior que o pacote, registro fora dos limites, falha de
+ * decifra/autenticação de um registro, total diferente do
+ * esperado, ou `malloc` falho.
+ * @endcond
+ * @cond INGLES
+ * @brief Decrypts the record sequence of an envelope, validating each
+ * length before using it.
+ * @details Used by `zupt_hybrid_decrypt()` (on the v2 envelope, already
+ * authenticated by the final tag) and by `zupt_hybrid_decrypt_legacy()`
+ * (on the v1 package, whose integrity comes from the SHA-256 checked afterwards).
+ * Per record: requires at least 52 bytes remaining; reads the
+ * length `n` as 4-byte little-endian; rejects `n` greater than
+ * `ZUPT_ENCRYPT_BLOCK_SIZE`, greater than the space still expected, or that
+ * does not fit in the rest of the package; rejects `n == 0` except when it is
+ * the only record of a package of exactly 52 bytes. Decrypts the
+ * `n + 48` following bytes with `zupt_decrypt_buffer()` using the record index
+ * as `block_seq` (this binds the MAC of each record to its
+ * position) and requires the result to have exactly `n` bytes.
+ * Any deviation jumps to the `fail` label, which wipes the output
+ * buffer with `discard_plain()` and returns `NULL` without writing
+ * `*plaintext_len`.
+ * @param[in]  kr             Keyring derived from the cipher header.
+ * @param[in]  ciphertext     Start of the record sequence (without the
+ * `ZUP2` prefix in the v2 case).
+ * @param[in]  ciphertext_len Total size of the sequence.
+ * @param[in]  expected_len   Expected total of plaintext bytes. In
+ * v2 it comes from the `u64le` field of the envelope; in v1 it is
+ * summed up by the record scan.
+ * @param[out] plaintext_len  Receives the total decrypted, only on success.
+ * @return `malloc`'d buffer of `expected_len` bytes (1 byte allocated when
+ * `expected_len == 0`), property of the caller; free with
+ * `zupt_free()`.
+ * @retval NULL package too short (`ciphertext_len < 52`), `expected_len`
+ * larger than the package, out-of-bounds record, record
+ * decryption/authentication failure, total different from the
+ * expected one, or `malloc` failure.
+ * @endcond */
 static uint8_t *decrypt_records(zupt_keyring_t *kr, const uint8_t *ciphertext,
     size_t ciphertext_len, size_t expected_len, size_t *plaintext_len) {
     if (ciphertext_len < 52 || expected_len > ciphertext_len) return NULL;
