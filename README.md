@@ -315,7 +315,7 @@ Contact: cabelo@opensuse.org
 - [Libsodium](https://github.com/jedisct1/libsodium)
 
 
-# libzupt
+# More Information
 
 Hybrid public-key encryption for files and memory, with a C11/C++17 native
 core and bindings/examples for Python, Go, Rust, Java, Node.js, .NET and PHP.
@@ -324,7 +324,7 @@ Licensed under MIT; see [LICENSE](LICENSE).
 [Português](docs/pt-BR/README.md) · [API](DOCUMENTATION.md) ·
 [Security](SECURITY.md) · [Format](docs/FORMAT.md) · [Migration](docs/MIGRATION.md)
 
-## Version 2.0.0 migration
+## Migration
 
 This is a breaking format update. New encryption uses FIPS 203 ML-KEM-768,
 X25519, a domain-separated hybrid KDF, AES-256-CTR and HMAC-SHA256.
@@ -333,13 +333,13 @@ bound by a final HMAC. Removing complete final blocks is rejected.
 
 | Object | New version | Size |
 | --- | --- | --- |
-| SDK library | 2.0.0 | platform dependent |
+| SDK library | 1.0.15 | platform dependent |
 | `ZKEY` public key | 2 | 1,224 bytes |
 | `ZKEY` private key | 2 | 3,656 bytes |
 | Encryption header | discriminator `0x03` | 1,137 bytes |
 | Empty ciphertext envelope | `ZUP2` | 96 bytes |
 
-Generate new v2 recipient keys. A v1 key is not relabeled as a FIPS 203 key.
+Generate new vq2 recipient keys. A v1 key is not relabeled as a FIPS 203 key.
 Normal decryption never falls back to the older scheme. Explicit v1 recovery
 requires an independently trusted SHA-256 of the complete original plaintext;
 see [migration](docs/MIGRATION.md).
