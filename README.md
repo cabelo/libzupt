@@ -309,6 +309,8 @@ Contact: cabelo@opensuse.org or alessandro.faria@owasp.org
 #### Main contributor.
 [**Cristian Cezar Moisés**](https://github.com/cristiancmoises)
 
+#### PHP Contributor
+[**Er Galvão Abbott**](https://github.com/galvao)
  
 ### References
 
