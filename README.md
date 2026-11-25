@@ -305,7 +305,10 @@ Alessandro de Oliveira Faria (A.K.A.CABELO)
 - Professor at FIA
 - Member i2Ai and ABRIA
 
-Contact: cabelo@opensuse.org
+Contact: cabelo@opensuse.org or alessandro.faria@owasp.org
+#### Main contributor.
+[**Cristian Cezar Moisés**](https://github.com/cristiancmoises)
+
  
 ### References
 
